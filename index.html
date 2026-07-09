@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Us</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
+  body { margin: 0; font-family: 'Inter', sans-serif; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useCallback } = React;
+
+/* ---------- palette ---------- */
+const C = {
+  bg: '#241726', bgAlt: '#331F37', panel: '#3B2440',
+  cream: '#F7EFE6', creamAlt: '#EFE1CC',
+  ink: '#2A1B2E', inkSoft: '#6E5C71',
+  rose: '#CD8090', roseDark: '#A85A66',
+  gold: '#C9A15A', sage: '#8FA382',
+  line: 'rgba(247,239,230,0.14)',
+};
+
+/* ---------- cloud backend (Supabase) ----------
+   1. Create a free project at supabase.com
+   2. In the SQL editor, run:
+
+      create table app_data (
+        key text primary key,
+        value jsonb not null,
+        updated_at timestamptz default now()
+      );
+      alter table app_data enable row level security;
+      create policy "public read" on app_data for select using (true);
+      create policy "public write" on app_data for insert with check (true);
+      create policy "public update" on app_data for update using (true);
+
+   3. Get your Project URL + anon public key from Settings > API, paste below.
+   NOTE: this makes the data readable/writable by anyone who has this URL + key
+   (both are visible in this file's source). Fine for a private, low-stakes,
+   just-the-two-of-you app — don't reuse this pattern for anything sensitive.
+------------------------------------------------------------------------------ */
+const SUPABASE_URL = 'https://ferbakqytwbxmwioddnl.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZlcmJha3F5dHdieG13aW9kZG5sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1OTMyODMsImV4cCI6MjA5OTE2OTI4M30.jTCf8RiupaGEbHgsITgYJRoZ4mflhh_-WUmkCvF4CDw';
+const supabase = (SUPABASE_URL.startsWith('http'))
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+const KEYS = { config: 'us-config', photos: 'us-photos', tasks: 'us-tasks', notes: 'us-notes', rewards: 'us-rewards' };
+
+async function loadJSON(key, fallback) {
+  if (!supabase) { // fallback to localStorage if not configured yet
+    try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
+    catch (e) { return fallback; }
+  }
+  try {
+    const { data, error } = await supabase.from('app_data').select('value').eq('key', key).maybeSingle();
+    if (error || !data) return fallback;
+    return data.value;
+  } catch (e) { return fallback; }
+}
+
+async function saveJSON(key, value) {
+  if (!supabase) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { console.error(e); }
+    return;
+  }
+  try {
+    await supabase.from('app_data').upsert({ key, value, updated_at: new Date().toISOString() });
+  } catch (e) { console.error('save failed', key, e); }
+}
+
+/* ---------- defaults ---------- */
+const DEFAULT_CONFIG = { setupDone: false, nameA: '', nameB: '', togetherSince: '', anniversary: '' };
+const DEFAULT_TASKS = {
+  templates: [
+    { id: 't1', text: 'Send a cute message' },
+    { id: 't2', text: 'Share a photo from today' },
+    { id: 't3', text: 'Tell me one thing you appreciate about me' },
+  ],
+  completions: {},
+};
+const DEFAULT_REWARDS = {
+  totalCompleted: 0,
+  coupons: [
+    'Movie night, your pick', 'Breakfast in bed', 'A whole day, no phones, just us',
+    'You plan the entire date', 'Massage, zero complaints', 'Cook a meal together',
+    'Stargazing and a blanket', 'A lazy Sunday, your rules',
+  ],
+  unlocked: [], claimed: [],
+};
+
+/* ---------- utils ---------- */
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+const todayStr = () => new Date().toISOString().slice(0, 10);
+function daysBetween(dateStr) {
+  if (!dateStr) return 0;
+  const start = new Date(dateStr + 'T00:00:00');
+  const now = new Date();
+  return Math.max(0, Math.floor((now - start) / 86400000));
+}
+function nextAnniversary(dateStr) {
+  if (!dateStr) return null;
+  const orig = new Date(dateStr + 'T00:00:00');
+  const now = new Date();
+  let next = new Date(now.getFullYear(), orig.getMonth(), orig.getDate());
+  if (next < new Date(now.getFullYear(), now.getMonth(), now.getDate())) {
+    next = new Date(now.getFullYear() + 1, orig.getMonth(), orig.getDate());
+  }
+  const days = Math.ceil((next - now) / 86400000);
+  const years = next.getFullYear() - orig.getFullYear();
+  return { date: next, days, years };
+}
+function fmtDate(d) {
+  if (!d) return '';
+  const dt = typeof d === 'string' ? new Date(d + 'T00:00:00') : d;
+  return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function compressImage(file, maxWidth = 900, quality = 0.72) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxWidth) { height = Math.round(height * (maxWidth / width)); width = maxWidth; }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ---------- tiny emoji "icon" helper ---------- */
+function Icon({ children, size = 16, color }) {
+  return <span style={{ fontSize: size, lineHeight: 1, color: color || 'inherit' }}>{children}</span>;
+}
+
+/* ---------- shared bits ---------- */
+function SectionHeader({ eyebrow, title, right }) {
+  return (
+    <div className="flex items-end justify-between mb-5 flex-wrap gap-3">
+      <div>
+        <div style={{ color: C.gold, letterSpacing: 3, fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>{eyebrow}</div>
+        <h2 style={{ fontFamily: "'Fraunces', serif", color: C.cream, fontSize: 30, fontWeight: 600, marginTop: 2 }}>{title}</h2>
+      </div>
+      {right}
+    </div>
+  );
+}
+function EmptyState({ icon, text }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '50px 20px', border: `1px dashed ${C.line}`, borderRadius: 18 }}>
+      <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'center' }}>{icon}</div>
+      <p style={{ color: C.inkSoft, fontSize: 14 }}>{text}</p>
+    </div>
+  );
+}
+
+/* ============================================================= SETUP */
+function SetupScreen({ onDone }) {
+  const [nameA, setNameA] = useState('');
+  const [nameB, setNameB] = useState('');
+  const [togetherSince, setTogetherSince] = useState('');
+  const [anniversary, setAnniversary] = useState('');
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!nameA.trim() || !nameB.trim() || !togetherSince) return;
+    onDone({ setupDone: true, nameA: nameA.trim(), nameB: nameB.trim(), togetherSince, anniversary: anniversary || togetherSince });
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ maxWidth: 440, width: '100%' }}>
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
+          <Icon size={28} color={C.rose}>❤</Icon>
+          <h1 style={{ fontFamily: "'Fraunces', serif", color: C.cream, fontSize: 34, fontWeight: 600, marginTop: 10 }}>Us</h1>
+          <p style={{ color: C.inkSoft, fontSize: 14, marginTop: 4 }}>A little space just for the two of you.</p>
+        </div>
+        <form onSubmit={submit} style={{ background: C.cream, borderRadius: 20, padding: 26, boxShadow: '0 20px 50px rgba(0,0,0,0.35)' }}>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div>
+              <label style={{ fontSize: 12, color: C.inkSoft, fontWeight: 600 }}>Your name</label>
+              <input value={nameA} onChange={e => setNameA(e.target.value)} placeholder="e.g. Manil" required
+                style={{ width: '100%', marginTop: 4, padding: '9px 10px', borderRadius: 10, border: `1px solid ${C.creamAlt}`, background: '#fff', color: C.ink, outline: 'none' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: C.inkSoft, fontWeight: 600 }}>Their name</label>
+              <input value={nameB} onChange={e => setNameB(e.target.value)} placeholder="e.g. Alex" required
+                style={{ width: '100%', marginTop: 4, padding: '9px 10px', borderRadius: 10, border: `1px solid ${C.creamAlt}`, background: '#fff', color: C.ink, outline: 'none' }} />
+            </div>
+          </div>
+          <div className="mb-4">
+            <label style={{ fontSize: 12, color: C.inkSoft, fontWeight: 600 }}>Together since</label>
+            <input type="date" value={togetherSince} onChange={e => setTogetherSince(e.target.value)} required
+              style={{ width: '100%', marginTop: 4, padding: '9px 10px', borderRadius: 10, border: `1px solid ${C.creamAlt}`, background: '#fff', color: C.ink, outline: 'none' }} />
+          </div>
+          <div className="mb-5">
+            <label style={{ fontSize: 12, color: C.inkSoft, fontWeight: 600 }}>Anniversary date (optional, defaults to above)</label>
+            <input type="date" value={anniversary} onChange={e => setAnniversary(e.target.value)}
+              style={{ width: '100%', marginTop: 4, padding: '9px 10px', borderRadius: 10, border: `1px solid ${C.creamAlt}`, background: '#fff', color: C.ink, outline: 'none' }} />
+          </div>
+          <button type="submit" style={{ width: '100%', padding: '11px 0', borderRadius: 12, background: C.roseDark, color: C.cream, fontWeight: 600, border: 'none', cursor: 'pointer' }}>
+            Start our page
+          </button>
+        </form>
+        <p style={{ color: C.inkSoft, fontSize: 12, textAlign: 'center', marginTop: 14 }}>
+          {supabase
+            ? 'Connected to your shared cloud database — this will sync across both your devices.'
+            : "Not connected to a cloud database yet, so this only saves in this browser. Add your Supabase URL and key near the top of the file to sync across devices."}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================= PHOTO WALL */
+function PhotoWall({ photos, addPhoto, likePhoto, deletePhoto }) {
+  const [filterAlbum, setFilterAlbum] = useState('All');
+  const [showForm, setShowForm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({ caption: '', date: todayStr(), location: '', album: 'Random Memories', file: null });
+  const albums = ['All', 'Trips', 'Dates', 'Random Memories', 'Photobooth'];
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.file) return;
+    setBusy(true);
+    try {
+      const src = await compressImage(form.file);
+      addPhoto({ src, caption: form.caption, date: form.date, location: form.location, album: form.album });
+      setForm({ caption: '', date: todayStr(), location: '', album: 'Random Memories', file: null });
+      setShowForm(false);
+    } catch (err) {
+      alert("Couldn't read that image — try a different file.");
+    }
+    setBusy(false);
+  };
+
+  const filtered = filterAlbum === 'All' ? photos : photos.filter(p => p.album === filterAlbum);
+  const sorted = [...filtered].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  return (
+    <div>
+      <SectionHeader eyebrow="Photo Wall" title="Every little moment"
+        right={
+          <button onClick={() => setShowForm(s => !s)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.rose, color: C.ink, fontWeight: 600, padding: '9px 16px', borderRadius: 999, border: 'none', cursor: 'pointer' }}>
+            + Add photo
+          </button>
+        } />
+
+      <div className="flex gap-2 flex-wrap mb-5">
+        {albums.map(a => (
+          <button key={a} onClick={() => setFilterAlbum(a)}
+            style={{
+              padding: '6px 14px', borderRadius: 999, fontSize: 13, border: `1px solid ${filterAlbum === a ? C.gold : C.line}`,
+              background: filterAlbum === a ? 'rgba(201,161,90,0.18)' : 'transparent', color: filterAlbum === a ? C.gold : C.cream, cursor: 'pointer',
+            }}>{a}</button>
+        ))}
+      </div>
+
+      {showForm && (
+        <form onSubmit={submit} style={{ background: C.cream, borderRadius: 18, padding: 20, marginBottom: 24 }}>
+          <input type="file" accept="image/*" onChange={e => setForm(f => ({ ...f, file: e.target.files[0] }))} required
+            style={{ marginBottom: 12, color: C.ink, fontSize: 13 }} />
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            <input placeholder="Caption" value={form.caption} onChange={e => setForm(f => ({ ...f, caption: e.target.value }))}
+              style={{ padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.creamAlt}`, background: '#fff', color: C.ink }} />
+            <input placeholder="Location" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
+              style={{ padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.creamAlt}`, background: '#fff', color: C.ink }} />
+            <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+              style={{ padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.creamAlt}`, background: '#fff', color: C.ink }} />
+            <select value={form.album} onChange={e => setForm(f => ({ ...f, album: e.target.value }))}
+              style={{ padding: '8px 10px', borderRadius: 10, border: `1px solid ${C.creamAlt}`, background: '#fff', color: C.ink }}>
+              {['Trips', 'Dates', 'Random Memories'].map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <button type="submit" disabled={busy} style={{ background: C.roseDark, color: C.cream, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+            {busy ? 'Saving…' : 'Save to wall'}
+          </button>
+        </form>
+      )}
+
+      {sorted.length === 0 ? (
+        <EmptyState icon={<Icon size={30} color={C.gold}>🖼</Icon>} text="No photos here yet. Add the first one." />
+      ) : (
+        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 20 }}>
+          {sorted.map(p => (
+            <div key={p.id} style={{ background: C.cream, borderRadius: 4, padding: 12, paddingBottom: 16, boxShadow: '0 10px 24px rgba(0,0,0,0.28)', transform: `rotate(${p.rot || 0}deg)` }}>
+              <img src={p.src} alt={p.caption} style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 2 }} />
+              <div style={{ paddingTop: 10 }}>
+                <div style={{ color: C.ink, fontFamily: "'Fraunces', serif", fontSize: 15, fontWeight: 600 }}>{p.caption || 'Untitled'}</div>
+                <div style={{ display: 'flex', gap: 8, color: C.inkSoft, fontSize: 11, marginTop: 3, flexWrap: 'wrap' }}>
+                  {p.date && <span>📅 {fmtDate(p.date)}</span>}
+                  {p.location && <span>📍 {p.location}</span>}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                  <button onClick={() => likePhoto(p.id)} style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', color: C.roseDark, fontWeight: 600, fontSize: 13 }}>
+                    {p.likes > 0 ? '❤' : '♡'} {p.likes || 0}
+                  </button>
+                  <button onClick={() => deletePhoto(p.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.inkSoft }}>
+                    🗑
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================= PHOTOBOOTH */
+function Photobooth({ addPhoto }) {
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const [active, setActive] = useState(false);
+  const [countdown, setCountdown] = useState(null);
+  const [capturing, setCapturing] = useState(false);
+  const [shots, setShots] = useState([]);
+  const [stripUrl, setStripUrl] = useState(null);
+  const [error, setError] = useState(null);
+
+  const startCamera = async () => {
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setActive(true);
+    } catch (e) {
+      setError("Couldn't reach the camera — this needs to be loaded over https (or localhost), and camera permission needs to be allowed.");
+    }
+  };
+
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    setActive(false);
+  }, []);
+
+  useEffect(() => () => stopCamera(), [stopCamera]);
+
+  const captureFrame = () => {
+    const video = videoRef.current;
+    const size = 480;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    const vw = video.videoWidth || size, vh = video.videoHeight || size;
+    const s = Math.min(vw, vh);
+    const sx = (vw - s) / 2, sy = (vh - s) / 2;
+    ctx.translate(size, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, sx, sy, s, s, 0, 0, size, size);
+    return canvas.toDataURL('image/jpeg', 0.85);
+  };
+
+  const buildStrip = (frames) => new Promise((resolve) => {
+    const frameSize = 480, pad = 24, gap = 16, footer = 96;
+    const canvas = document.createElement('canvas');
+    canvas.width = frameSize + pad * 2;
+    canvas.height = pad * 2 + frames.length * frameSize + (frames.length - 1) * gap + footer;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = C.cream;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = C.ink;
+    for (let y = 20; y < canvas.height - 20; y += 26) {
+      ctx.beginPath(); ctx.arc(12, y, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(canvas.width - 12, y, 5, 0, Math.PI * 2); ctx.fill();
+    }
+    let loaded = 0;
+    frames.forEach((src, i) => {
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, pad, pad + i * (frameSize + gap), frameSize, frameSize);
+        loaded++;
+        if (loaded === frames.length) {
+          ctx.fillStyle = C.ink;
+          ctx.textAlign = 'center';
+          ctx.font = "600 26px Fraunces, serif";
+          ctx.fillText('Us — Photobooth', canvas.width / 2, canvas.height - 48);
+          ctx.font = "400 15px Inter, sans-serif";
+          ctx.fillStyle = C.inkSoft;
+          ctx.fillText(new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }), canvas.width / 2, canvas.height - 22);
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        }
+      };
+      img.src = src;
+    });
+  });
+
+  const runSequence = async () => {
+    setShots([]); setStripUrl(null); setCapturing(true);
+    const collected = [];
+    for (let i = 0; i < 4; i++) {
+      for (let c = 3; c >= 1; c--) { setCountdown(c); await new Promise(r => setTimeout(r, 650)); }
+      setCountdown('•');
+      const frame = captureFrame();
+      collected.push(frame);
+      setShots([...collected]);
+      await new Promise(r => setTimeout(r, 400));
+    }
+    setCountdown(null); setCapturing(false);
+    const strip = await buildStrip(collected);
+    setStripUrl(strip);
+  };
+
+  const saveToWall = () => {
+    if (!stripUrl) return;
+    addPhoto({ src: stripUrl, caption: 'Photobooth strip', date: todayStr(), location: '', album: 'Photobooth' });
+    setShots([]); setStripUrl(null);
+  };
+
+  return (
+    <div>
+      <SectionHeader eyebrow="Photobooth" title="Four shots, one strip" />
+      <div style={{ background: C.cream, borderRadius: 20, padding: 24, display: 'grid', gridTemplateColumns: stripUrl ? '1fr 200px' : '1fr', gap: 24 }}>
+        <div>
+          <div style={{ position: 'relative', width: '100%', maxWidth: 480, aspectRatio: '1/1', background: '#000', borderRadius: 12, overflow: 'hidden', margin: '0 auto' }}>
+            <video ref={videoRef} playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)', display: active ? 'block' : 'none' }} />
+            {!active && (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10, color: '#fff' }}>
+                <span style={{ fontSize: 32 }}>📷</span>
+                <span style={{ fontSize: 13, opacity: 0.8 }}>Camera is off</span>
+              </div>
+            )}
+            {countdown !== null && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.25)' }}>
+                <span style={{ fontSize: 64, fontWeight: 700, color: '#fff', fontFamily: "'Fraunces', serif" }}>{countdown}</span>
+              </div>
+            )}
+          </div>
+
+          {error && <p style={{ color: C.roseDark, fontSize: 13, marginTop: 12, textAlign: 'center' }}>{error}</p>}
+
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 18, flexWrap: 'wrap' }}>
+            {!active ? (
+              <button onClick={startCamera} style={{ background: C.roseDark, color: C.cream, fontWeight: 600, padding: '10px 20px', borderRadius: 999, border: 'none', cursor: 'pointer' }}>
+                Turn on camera
+              </button>
+            ) : (
+              <>
+                <button onClick={runSequence} disabled={capturing}
+                  style={{ background: C.gold, color: C.ink, fontWeight: 600, padding: '10px 20px', borderRadius: 999, border: 'none', cursor: capturing ? 'default' : 'pointer', opacity: capturing ? 0.6 : 1 }}>
+                  {capturing ? 'Capturing…' : 'Start the strip (4 shots)'}
+                </button>
+                <button onClick={stopCamera} style={{ background: 'transparent', color: C.ink, fontWeight: 600, padding: '10px 20px', borderRadius: 999, border: `1px solid ${C.creamAlt}`, cursor: 'pointer' }}>
+                  Turn off camera
+                </button>
+              </>
+            )}
+          </div>
+
+          {shots.length > 0 && !stripUrl && (
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 16 }}>
+              {shots.map((s, i) => <img key={i} src={s} style={{ width: 60, height: 60, borderRadius: 6, objectFit: 'cover' }} />)}
+            </div>
+          )}
+        </div>
+
+        {stripUrl && (
+          <div style={{ textAlign: 'center' }}>
+            <img src={stripUrl} style={{ width: '100%', borderRadius: 10, boxShadow: '0 12px 26px rgba(0,0,0,0.25)' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+              <button onClick={saveToWall} style={{ background: C.roseDark, color: C.cream, fontWeight: 600, padding: '9px 0', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+                Save to Photo Wall
+              </button>
+              <a href={stripUrl} download="us-photobooth-strip.jpg"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'transparent', color: C.ink, fontWeight: 600, padding: '9px 0', borderRadius: 10, border: `1px solid ${C.creamAlt}`, textDecoration: 'none' }}>
+                ⬇ Download
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+      <p style={{ color: C.inkSoft, fontSize: 12, marginTop: 12 }}>Uses your camera locally — nothing is sent anywhere until you choose to save it.</p>
+    </div>
+  );
+}
+
+/* ============================================================= TASKS */
+function Tasks({ tasksData, setTasksData, activeUser, bumpRewards }) {
+  const [customText, setCustomText] = useState('');
+  const today = todayStr();
+  const todaysCompletions = tasksData.completions[today] || {};
+
+  const toggle = (taskId) => {
+    const next = { ...tasksData, completions: { ...tasksData.completions } };
+    const day = { ...(next.completions[today] || {}) };
+    if (day[taskId]) {
+      delete day[taskId];
+      bumpRewards(-1);
+    } else {
+      day[taskId] = { by: activeUser, at: Date.now() };
+      bumpRewards(1);
+    }
+    next.completions[today] = day;
+    setTasksData(next);
+  };
+
+  const addTemplate = (e) => {
+    e.preventDefault();
+    if (!customText.trim()) return;
+    setTasksData({ ...tasksData, templates: [...tasksData.templates, { id: uid(), text: customText.trim() }] });
+    setCustomText('');
+  };
+
+  const removeTemplate = (id) => {
+    setTasksData({ ...tasksData, templates: tasksData.templates.filter(t => t.id !== id) });
+  };
+
+  const doneCount = Object.keys(todaysCompletions).length;
+
+  return (
+    <div>
+      <SectionHeader eyebrow="Daily Tasks" title="Today's little ways to show up" />
+      <div style={{ background: C.cream, borderRadius: 20, padding: 22 }}>
+        <div style={{ color: C.inkSoft, fontSize: 13, marginBottom: 14 }}>{doneCount} of {tasksData.templates.length} done today — completing as <b style={{ color: C.ink }}>{activeUser}</b></div>
+        <div className="flex flex-col gap-2">
+          {tasksData.templates.map(t => {
+            const done = todaysCompletions[t.id];
+            return (
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, background: done ? 'rgba(143,163,130,0.18)' : C.creamAlt }}>
+                <button onClick={() => toggle(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: done ? C.sage : C.inkSoft }}>
+                  {done ? '✅' : '⭕'}
+                </button>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: C.ink, fontWeight: 500, textDecoration: done ? 'line-through' : 'none' }}>{t.text}</div>
+                  {done && <div style={{ fontSize: 11, color: C.inkSoft }}>done by {done.by}</div>}
+                </div>
+                <button onClick={() => removeTemplate(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.inkSoft }}>✕</button>
+              </div>
+            );
+          })}
+        </div>
+        <form onSubmit={addTemplate} style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <input value={customText} onChange={e => setCustomText(e.target.value)} placeholder="Add your own daily task…"
+            style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: `1px solid ${C.creamAlt}`, background: '#fff', color: C.ink }} />
+          <button type="submit" style={{ background: C.roseDark, color: C.cream, fontWeight: 600, padding: '9px 16px', borderRadius: 10, border: 'none', cursor: 'pointer' }}>Add</button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================= STATS */
+function Stats({ config, photos, tasksData, rewards }) {
+  const days = daysBetween(config.togetherSince);
+  const totalTasksDone = Object.values(tasksData.completions).reduce((sum, day) => sum + Object.keys(day).length, 0);
+  const anniv = nextAnniversary(config.anniversary);
+
+  const cards = [
+    { label: 'Days together', value: days, emoji: '❤' },
+    { label: 'Photos shared', value: photos.length, emoji: '🖼' },
+    { label: 'Tasks completed', value: totalTasksDone, emoji: '✅' },
+    { label: 'Hearts earned', value: rewards.totalCompleted, emoji: '✨' },
+  ];
+
+  return (
+    <div>
+      <SectionHeader eyebrow="Relationship Stats" title="The numbers behind it" />
+      <div className="grid gap-4 mb-6" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+        {cards.map(c => (
+          <div key={c.label} style={{ background: C.cream, borderRadius: 16, padding: '18px 18px' }}>
+            <div style={{ marginBottom: 8, fontSize: 18 }}>{c.emoji}</div>
+            <div style={{ fontFamily: "'Fraunces', serif", fontSize: 30, fontWeight: 600, color: C.ink }}>{c.value}</div>
+            <div style={{ fontSize: 12, color: C.inkSoft }}>{c.label}</div>
+          </div>
+        ))}
+      </div>
+      {anniv && (
+        <div style={{ background: C.panel, borderRadius: 16, padding: 20, display: 'flex', alignItems: 'center', gap: 14 }}>
+          <span style={{ fontSize: 22 }}>📅</span>
+          <div>
+            <div style={{ color: C.cream, fontWeight: 600 }}>Next anniversary in {anniv.days} day{anniv.days === 1 ? '' : 's'}</div>
+            <div style={{ color: C.inkSoft, fontSize: 13 }}>{fmtDate(anniv.date)} — year {Math.max(1, anniv.years || 1)}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================= NOTES */
+function Notes({ notes, addNote, activeUser }) {
+  const [message, setMessage] = useState('');
+  const [unlockDate, setUnlockDate] = useState('');
+  const today = todayStr();
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!message.trim()) return;
+    addNote({ author: activeUser, message: message.trim(), unlockDate: unlockDate || null, createdAt: Date.now() });
+    setMessage(''); setUnlockDate('');
+  };
+
+  const sorted = [...notes].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  return (
+    <div>
+      <SectionHeader eyebrow="Love Notes" title="Words for each other" />
+      <form onSubmit={submit} style={{ background: C.cream, borderRadius: 18, padding: 20, marginBottom: 24 }}>
+        <textarea value={message} onChange={e => setMessage(e.target.value)} placeholder="Write something…" rows={3}
+          style={{ width: '100%', padding: 10, borderRadius: 10, border: `1px solid ${C.creamAlt}`, background: '#fff', color: C.ink, resize: 'vertical', marginBottom: 10 }} />
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 12, color: C.inkSoft }}>Unlock on (optional):</label>
+          <input type="date" value={unlockDate} onChange={e => setUnlockDate(e.target.value)}
+            style={{ padding: '7px 10px', borderRadius: 8, border: `1px solid ${C.creamAlt}`, background: '#fff', color: C.ink }} />
+          <button type="submit" style={{ marginLeft: 'auto', background: C.roseDark, color: C.cream, fontWeight: 600, padding: '9px 18px', borderRadius: 10, border: 'none', cursor: 'pointer' }}>
+            Leave note
+          </button>
+        </div>
+      </form>
+
+      {sorted.length === 0 ? (
+        <EmptyState icon={<span style={{ fontSize: 28 }}>✉️</span>} text="No notes yet — leave the first one." />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {sorted.map(n => {
+            const locked = n.unlockDate && n.unlockDate > today;
+            return (
+              <div key={n.id} style={{ background: locked ? C.panel : C.cream, borderRadius: 14, padding: 16 }}>
+                {locked ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: C.inkSoft }}>
+                    <span>🔒</span>
+                    <span>Locked until {fmtDate(n.unlockDate)}</span>
+                  </div>
+                ) : (
+                  <>
+                    <p style={{ color: C.ink, fontSize: 15 }}>{n.message}</p>
+                    <div style={{ marginTop: 8, fontSize: 12, color: C.inkSoft }}>— {n.author}{n.unlockDate ? ` · unlocked ${fmtDate(n.unlockDate)}` : ''}</div>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================= REWARDS */
+function Rewards({ rewards, setRewards }) {
+  const progressInCycle = rewards.totalCompleted % 7;
+  const coupons = rewards.coupons;
+
+  const claim = (idx) => {
+    setRewards({ ...rewards, unlocked: rewards.unlocked.filter(i => i !== idx), claimed: [...rewards.claimed, idx] });
+  };
+
+  return (
+    <div>
+      <SectionHeader eyebrow="Rewards" title="Hearts into coupons" />
+      <div style={{ background: C.cream, borderRadius: 18, padding: 20, marginBottom: 22 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: C.inkSoft, marginBottom: 8 }}>
+          <span>Progress to next coupon</span><span>{progressInCycle}/7</span>
+        </div>
+        <div style={{ height: 10, borderRadius: 999, background: C.creamAlt, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${(progressInCycle / 7) * 100}%`, background: C.gold, transition: 'width 0.4s' }} />
+        </div>
+        <div style={{ fontSize: 12, color: C.inkSoft, marginTop: 8 }}>{rewards.totalCompleted} total hearts earned · every 7 unlocks a date night coupon</div>
+      </div>
+
+      {rewards.unlocked.length === 0 ? (
+        <EmptyState icon={<span style={{ fontSize: 28 }}>🎁</span>} text="No coupons unlocked yet — finish 7 tasks to earn one." />
+      ) : (
+        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+          {rewards.unlocked.map(idx => (
+            <div key={idx} style={{ background: C.panel, borderRadius: 14, padding: 18, border: `1px dashed ${C.gold}` }}>
+              <span style={{ fontSize: 18 }}>🎁</span>
+              <div style={{ color: C.cream, fontWeight: 600, marginTop: 8 }}>{coupons[idx % coupons.length]}</div>
+              <button onClick={() => claim(idx)} style={{ marginTop: 12, background: C.gold, color: C.ink, fontWeight: 600, padding: '7px 14px', borderRadius: 999, border: 'none', cursor: 'pointer', fontSize: 13 }}>
+                Mark as used
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {rewards.claimed.length > 0 && (
+        <div style={{ marginTop: 22 }}>
+          <div style={{ color: C.inkSoft, fontSize: 12, marginBottom: 8 }}>Used ({rewards.claimed.length})</div>
+          <div className="flex flex-col gap-2">
+            {rewards.claimed.map((idx, i) => (
+              <div key={i} style={{ color: C.inkSoft, fontSize: 13, textDecoration: 'line-through' }}>{coupons[idx % coupons.length]}</div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================= APP */
+function App() {
+  const [loading, setLoading] = useState(true);
+  const [needsSetupPrompt, setNeedsSetupPrompt] = useState(!supabase);
+  const [config, setConfig] = useState(DEFAULT_CONFIG);
+  const [photos, setPhotos] = useState([]);
+  const [tasksData, setTasksData] = useState(DEFAULT_TASKS);
+  const [notes, setNotes] = useState([]);
+  const [rewards, setRewards] = useState(DEFAULT_REWARDS);
+  const [tab, setTab] = useState('wall');
+  const [activeUser, setActiveUser] = useState('');
+  const skipNextSave = useRef({});
+
+  // initial load
+  useEffect(() => {
+    (async () => {
+      const [c, p, t, n, r] = await Promise.all([
+        loadJSON(KEYS.config, DEFAULT_CONFIG),
+        loadJSON(KEYS.photos, []),
+        loadJSON(KEYS.tasks, DEFAULT_TASKS),
+        loadJSON(KEYS.notes, []),
+        loadJSON(KEYS.rewards, DEFAULT_REWARDS),
+      ]);
+      setConfig(c); setPhotos(p); setTasksData(t); setNotes(n); setRewards(r);
+      setActiveUser(c.nameA || '');
+      setLoading(false);
+    })();
+  }, []);
+
+  // realtime sync — reflect changes made from the other person's device
+  useEffect(() => {
+    if (!supabase) return;
+    const channel = supabase.channel('app_data_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_data' }, (payload) => {
+        const row = payload.new;
+        if (!row) return;
+        if (row.key === KEYS.config) setConfig(row.value);
+        else if (row.key === KEYS.photos) setPhotos(row.value);
+        else if (row.key === KEYS.tasks) setTasksData(row.value);
+        else if (row.key === KEYS.notes) setNotes(row.value);
+        else if (row.key === KEYS.rewards) setRewards(row.value);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  useEffect(() => { if (!loading) saveJSON(KEYS.config, config); }, [config, loading]);
+  useEffect(() => { if (!loading) saveJSON(KEYS.photos, photos); }, [photos, loading]);
+  useEffect(() => { if (!loading) saveJSON(KEYS.tasks, tasksData); }, [tasksData, loading]);
+  useEffect(() => { if (!loading) saveJSON(KEYS.notes, notes); }, [notes, loading]);
+  useEffect(() => { if (!loading) saveJSON(KEYS.rewards, rewards); }, [rewards, loading]);
+
+  const addPhoto = (p) => setPhotos(prev => [...prev, { id: uid(), likes: 0, rot: (Math.random() * 4 - 2).toFixed(1), ...p }]);
+  const likePhoto = (id) => setPhotos(prev => prev.map(p => p.id === id ? { ...p, likes: (p.likes || 0) + 1 } : p));
+  const deletePhoto = (id) => { if (confirm('Delete this photo?')) setPhotos(prev => prev.filter(p => p.id !== id)); };
+  const addNote = (n) => setNotes(prev => [...prev, { id: uid(), ...n }]);
+
+  const bumpRewards = (delta) => {
+    setRewards(prev => {
+      const total = Math.max(0, prev.totalCompleted + delta);
+      let unlocked = [...prev.unlocked];
+      if (delta > 0) {
+        const prevCycles = Math.floor(prev.totalCompleted / 7);
+        const newCycles = Math.floor(total / 7);
+        for (let i = prevCycles; i < newCycles; i++) unlocked.push(i);
+      }
+      return { ...prev, totalCompleted: total, unlocked };
+    });
+  };
+
+  if (loading) {
+    return <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.cream }}>Loading…</div>;
+  }
+
+  if (!config.setupDone) {
+    return <SetupScreen onDone={(c) => { setConfig(c); setActiveUser(c.nameA); }} />;
+  }
+
+  const tabs = [
+    { id: 'wall', label: 'Photo Wall' },
+    { id: 'booth', label: 'Photobooth' },
+    { id: 'tasks', label: 'Daily Tasks' },
+    { id: 'stats', label: 'Stats' },
+    { id: 'notes', label: 'Love Notes' },
+    { id: 'rewards', label: 'Rewards' },
+  ];
+
+  return (
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'Inter', sans-serif" }}>
+      {needsSetupPrompt && (
+        <div style={{ background: C.gold, color: C.ink, fontSize: 13, textAlign: 'center', padding: '8px 12px', fontWeight: 600 }}>
+          Not connected to a cloud database yet — running on this browser's local storage only. Add your Supabase URL and key near the top of this file to sync across devices.
+        </div>
+      )}
+      <div style={{ maxWidth: 980, margin: '0 auto', padding: '32px 20px 70px' }}>
+        <header style={{ marginBottom: 26 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ color: C.rose, fontSize: 20 }}>❤</span>
+              <span style={{ fontFamily: "'Fraunces', serif", fontSize: 22, color: C.cream, fontWeight: 600 }}>{config.nameA} &amp; {config.nameB}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[config.nameA, config.nameB].map(n => (
+                <button key={n} onClick={() => setActiveUser(n)}
+                  style={{ padding: '6px 12px', borderRadius: 999, fontSize: 12, border: `1px solid ${activeUser === n ? C.gold : C.line}`, background: activeUser === n ? 'rgba(201,161,90,0.18)' : 'transparent', color: activeUser === n ? C.gold : C.cream, cursor: 'pointer' }}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ height: 1, background: C.line, marginBottom: 14 }} />
+          <div className="flex gap-1 flex-wrap">
+            {tabs.map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                style={{
+                  padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', borderRadius: '10px 10px 0 0',
+                  background: tab === t.id ? C.cream : 'transparent', color: tab === t.id ? C.ink : C.inkSoft,
+                }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </header>
+
+        <main>
+          {tab === 'wall' && <PhotoWall photos={photos} addPhoto={addPhoto} likePhoto={likePhoto} deletePhoto={deletePhoto} />}
+          {tab === 'booth' && <Photobooth addPhoto={addPhoto} />}
+          {tab === 'tasks' && <Tasks tasksData={tasksData} setTasksData={setTasksData} activeUser={activeUser} bumpRewards={bumpRewards} />}
+          {tab === 'stats' && <Stats config={config} photos={photos} tasksData={tasksData} rewards={rewards} />}
+          {tab === 'notes' && <Notes notes={notes} addNote={addNote} activeUser={activeUser} />}
+          {tab === 'rewards' && <Rewards rewards={rewards} setRewards={setRewards} />}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
