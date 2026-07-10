@@ -17,6 +17,14 @@
 <div id="root"></div>
 
 <script>
+window.addEventListener('error', function(e) {
+  var root = document.getElementById('root');
+  if (root && !root.hasChildNodes()) {
+    root.innerHTML = '<div style="padding:40px;color:#F7EFE6;background:#241726;font-family:sans-serif;min-height:100vh;box-sizing:border-box;"><h2 style="font-family:serif;">Something went wrong loading the page</h2><p style="opacity:0.7;">' + (e.message || 'Unknown error') + '</p><p style="opacity:0.5;font-size:13px;">Open the browser console (F12) for the full error, and share it to get this fixed.</p></div>';
+  }
+});
+</script>
+<script>
 const {
   useState,
   useEffect,
@@ -61,7 +69,16 @@ const C = {
 ------------------------------------------------------------------------------ */
 const SUPABASE_URL = 'https://ferbakqytwbxmwioddnl.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZlcmJha3F5dHdieG13aW9kZG5sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1OTMyODMsImV4cCI6MjA5OTE2OTI4M30.jTCf8RiupaGEbHgsITgYJRoZ4mflhh_-WUmkCvF4CDw';
-const supabase = SUPABASE_URL.startsWith('http') ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+var supabase = null;
+try {
+  if (SUPABASE_URL.startsWith('http') && window.supabase && window.supabase.createClient) {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } else if (SUPABASE_URL.startsWith('http')) {
+    console.error('Supabase library did not load (likely blocked by network/browser). Falling back to local storage only.');
+  }
+} catch (e) {
+  console.error('Supabase client failed to initialize, falling back to local storage only:', e);
+}
 const KEYS = {
   config: 'us-config',
   photos: 'us-photos',
