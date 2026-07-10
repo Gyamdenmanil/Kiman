@@ -9,8 +9,27 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
-  body { margin: 0; font-family: 'Inter', sans-serif; }
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Cormorant+Garamond:ital,wght@0,500;1,500&family=Give+You+Glory&family=Inter:wght@400;500;600;700&display=swap');
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background:
+      radial-gradient(ellipse 900px 600px at 15% -10%, rgba(213,168,214,0.16), transparent 60%),
+      radial-gradient(ellipse 700px 700px at 110% 20%, rgba(217,184,118,0.10), transparent 55%),
+      radial-gradient(ellipse 800px 900px at 50% 120%, rgba(156,47,83,0.28), transparent 60%),
+      linear-gradient(160deg, #1B0E1F 0%, #240F28 45%, #1B0E1F 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+  @keyframes twinkle { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.85; } }
+  @keyframes welcomeFade { 0% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; pointer-events: none; } }
+  @keyframes welcomeText { 0% { opacity: 0; transform: translateY(14px) scale(0.96); } 20% { opacity: 1; transform: translateY(0) scale(1); } 80% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-6px) scale(1.02); } }
+  .sparkle-field { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+  .sparkle { position: absolute; border-radius: 50%; background: #F0DFAE; animation: twinkle 4s ease-in-out infinite; }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: #1B0E1F; }
+  ::-webkit-scrollbar-thumb { background: #6B1E42; border-radius: 10px; }
 </style>
 </head>
 <body>
@@ -34,19 +53,25 @@ const {
 
 /* ---------- palette ---------- */
 const C = {
-  bg: '#241726',
-  bgAlt: '#331F37',
-  panel: '#3B2440',
-  cream: '#F7EFE6',
-  creamAlt: '#EFE1CC',
-  ink: '#2A1B2E',
-  inkSoft: '#6E5C71',
-  rose: '#CD8090',
-  roseDark: '#A85A66',
-  gold: '#C9A15A',
-  sage: '#8FA382',
-  line: 'rgba(247,239,230,0.14)'
+  bg: '#1B0E1F',
+  bgAlt: '#2E1330',
+  panel: '#3A1638',
+  panelGlass: 'rgba(58,22,56,0.55)',
+  cream: '#FBF3E9',
+  creamAlt: '#F3DCE4',
+  ink: '#2B1030',
+  inkSoft: '#8A6E86',
+  rose: '#E3A0BB',
+  roseDark: '#9C2F53',
+  roseDeep: '#6B1E42',
+  gold: '#D9B876',
+  goldSoft: '#F0DFAE',
+  sage: '#7DA187',
+  magenta: '#B5487C',
+  line: 'rgba(251,243,233,0.14)'
 };
+const GRAD_PRIMARY = 'linear-gradient(135deg, #9C2F53 0%, #6B1E42 55%, #4A1638 100%)';
+const GRAD_GOLD = 'linear-gradient(135deg, #E8C77E 0%, #D9B876 100%)';
 
 /* ---------- cloud backend (Supabase) ----------
    1. Create a free project at supabase.com
@@ -240,24 +265,35 @@ function SectionHeader({
   right
 }) {
   return /*#__PURE__*/React.createElement("div", {
-    className: "flex items-end justify-between mb-5 flex-wrap gap-3"
+    className: "flex items-end justify-between mb-6 flex-wrap gap-3"
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       color: C.gold,
-      letterSpacing: 3,
+      letterSpacing: 4,
       fontSize: 11,
       fontWeight: 600,
-      textTransform: 'uppercase'
+      textTransform: 'uppercase',
+      fontFamily: "'Cormorant Garamond', serif",
+      fontStyle: 'italic'
     }
   }, eyebrow), /*#__PURE__*/React.createElement("h2", {
     style: {
       fontFamily: "'Fraunces', serif",
       color: C.cream,
-      fontSize: 30,
+      fontSize: 32,
       fontWeight: 600,
-      marginTop: 2
+      marginTop: 4,
+      textShadow: '0 2px 20px rgba(213,168,214,0.25)'
     }
-  }, title)), right);
+  }, title), /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 56,
+      height: 3,
+      marginTop: 10,
+      borderRadius: 999,
+      background: GRAD_GOLD
+    }
+  })), right);
 }
 function EmptyState({
   icon,
@@ -290,15 +326,19 @@ function SetupScreen({
 }) {
   const [nameA, setNameA] = useState('');
   const [nameB, setNameB] = useState('');
+  const [passwordA, setPasswordA] = useState('');
+  const [passwordB, setPasswordB] = useState('');
   const [togetherSince, setTogetherSince] = useState('');
   const [anniversary, setAnniversary] = useState('');
   const submit = e => {
     e.preventDefault();
-    if (!nameA.trim() || !nameB.trim() || !togetherSince) return;
+    if (!nameA.trim() || !nameB.trim() || !togetherSince || !passwordA || !passwordB) return;
     onDone({
       setupDone: true,
       nameA: nameA.trim(),
       nameB: nameB.trim(),
+      passwordA,
+      passwordB,
       togetherSince,
       anniversary: anniversary || togetherSince
     });
@@ -306,53 +346,63 @@ function SetupScreen({
   return /*#__PURE__*/React.createElement("div", {
     style: {
       minHeight: '100vh',
-      background: C.bg,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: 24
+      padding: 24,
+      position: 'relative',
+      zIndex: 1
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(SparkleField, null), /*#__PURE__*/React.createElement("div", {
     style: {
-      maxWidth: 440,
-      width: '100%'
+      maxWidth: 460,
+      width: '100%',
+      position: 'relative',
+      zIndex: 1
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: 'center',
       marginBottom: 28
     }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    size: 28,
-    color: C.rose
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.rose,
+      fontSize: 30,
+      textShadow: '0 0 20px rgba(227,160,187,0.6)'
+    }
   }, "❤"), /*#__PURE__*/React.createElement("h1", {
     style: {
-      fontFamily: "'Fraunces', serif",
+      fontFamily: "'Give You Glory', cursive",
       color: C.cream,
-      fontSize: 34,
-      fontWeight: 600,
-      marginTop: 10
+      fontSize: 48,
+      fontWeight: 400,
+      marginTop: 6
     }
   }, "Us"), /*#__PURE__*/React.createElement("p", {
     style: {
       color: C.inkSoft,
       fontSize: 14,
-      marginTop: 4
+      marginTop: 2,
+      fontFamily: "'Cormorant Garamond', serif",
+      fontStyle: 'italic'
     }
-  }, "A little space just for the two of you.")), /*#__PURE__*/React.createElement("form", {
+  }, "A little space just for the two of you")), /*#__PURE__*/React.createElement("form", {
     onSubmit: submit,
     style: {
-      background: C.cream,
-      borderRadius: 20,
-      padding: 26,
-      boxShadow: '0 20px 50px rgba(0,0,0,0.35)'
+      background: C.panelGlass,
+      backdropFilter: 'blur(16px)',
+      borderRadius: 24,
+      padding: 28,
+      boxShadow: '0 25px 60px rgba(107,30,66,0.45), 0 0 0 1px rgba(217,184,118,0.15)',
+      border: `1px solid ${C.line}`
     }
   }, /*#__PURE__*/React.createElement("div", {
     className: "grid grid-cols-2 gap-3 mb-4"
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 12,
-      color: C.inkSoft,
+      color: C.creamAlt,
       fontWeight: 600
     }
   }, "Your name"), /*#__PURE__*/React.createElement("input", {
@@ -360,20 +410,11 @@ function SetupScreen({
     onChange: e => setNameA(e.target.value),
     placeholder: "e.g. Manil",
     required: true,
-    style: {
-      width: '100%',
-      marginTop: 4,
-      padding: '9px 10px',
-      borderRadius: 10,
-      border: `1px solid ${C.creamAlt}`,
-      background: '#fff',
-      color: C.ink,
-      outline: 'none'
-    }
+    style: inputStyle
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 12,
-      color: C.inkSoft,
+      color: C.creamAlt,
       fontWeight: 600
     }
   }, "Their name"), /*#__PURE__*/React.createElement("input", {
@@ -381,22 +422,41 @@ function SetupScreen({
     onChange: e => setNameB(e.target.value),
     placeholder: "e.g. Alex",
     required: true,
+    style: inputStyle
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-2 gap-3 mb-4"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: {
-      width: '100%',
-      marginTop: 4,
-      padding: '9px 10px',
-      borderRadius: 10,
-      border: `1px solid ${C.creamAlt}`,
-      background: '#fff',
-      color: C.ink,
-      outline: 'none'
+      fontSize: 12,
+      color: C.creamAlt,
+      fontWeight: 600
     }
+  }, "Your password"), /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    value: passwordA,
+    onChange: e => setPasswordA(e.target.value),
+    placeholder: "pick something",
+    required: true,
+    style: inputStyle
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 12,
+      color: C.creamAlt,
+      fontWeight: 600
+    }
+  }, "Their password"), /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    value: passwordB,
+    onChange: e => setPasswordB(e.target.value),
+    placeholder: "pick something",
+    required: true,
+    style: inputStyle
   }))), /*#__PURE__*/React.createElement("div", {
     className: "mb-4"
   }, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 12,
-      color: C.inkSoft,
+      color: C.creamAlt,
       fontWeight: 600
     }
   }, "Together since"), /*#__PURE__*/React.createElement("input", {
@@ -404,61 +464,248 @@ function SetupScreen({
     value: togetherSince,
     onChange: e => setTogetherSince(e.target.value),
     required: true,
-    style: {
-      width: '100%',
-      marginTop: 4,
-      padding: '9px 10px',
-      borderRadius: 10,
-      border: `1px solid ${C.creamAlt}`,
-      background: '#fff',
-      color: C.ink,
-      outline: 'none'
-    }
+    style: inputStyle
   })), /*#__PURE__*/React.createElement("div", {
     className: "mb-5"
   }, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 12,
-      color: C.inkSoft,
+      color: C.creamAlt,
       fontWeight: 600
     }
-  }, "Anniversary date (optional, defaults to above)"), /*#__PURE__*/React.createElement("input", {
+  }, "Anniversary date (optional)"), /*#__PURE__*/React.createElement("input", {
     type: "date",
     value: anniversary,
     onChange: e => setAnniversary(e.target.value),
-    style: {
-      width: '100%',
-      marginTop: 4,
-      padding: '9px 10px',
-      borderRadius: 10,
-      border: `1px solid ${C.creamAlt}`,
-      background: '#fff',
-      color: C.ink,
-      outline: 'none'
-    }
+    style: inputStyle
   })), /*#__PURE__*/React.createElement("button", {
     type: "submit",
     style: {
       width: '100%',
-      padding: '11px 0',
-      borderRadius: 12,
-      background: C.roseDark,
+      padding: '12px 0',
+      borderRadius: 14,
+      background: GRAD_PRIMARY,
       color: C.cream,
       fontWeight: 600,
       border: 'none',
-      cursor: 'pointer'
+      cursor: 'pointer',
+      boxShadow: '0 8px 22px rgba(156,47,83,0.4)'
     }
-  }, "Start our page")), /*#__PURE__*/React.createElement("p", {
+  }, "Create our page")), /*#__PURE__*/React.createElement("p", {
     style: {
       color: C.inkSoft,
       fontSize: 12,
       textAlign: 'center',
-      marginTop: 14
+      marginTop: 14,
+      lineHeight: 1.5
     }
-  }, supabase ? 'Connected to your shared cloud database — this will sync across both your devices.' : "Not connected to a cloud database yet, so this only saves in this browser. Add your Supabase URL and key near the top of the file to sync across devices.")));
+  }, "Heads up: these passwords are a fun keep-out gate for the two of you, not real security — anyone who opens this file's source could read them. Don't reuse a password you use elsewhere.")));
 }
-
-/* ============================================================= PHOTO WALL */
+const inputStyle = {
+  width: '100%',
+  marginTop: 4,
+  padding: '10px 12px',
+  borderRadius: 12,
+  border: `1px solid ${C.line}`,
+  background: 'rgba(251,243,233,0.06)',
+  color: C.cream,
+  outline: 'none'
+};
+function LoginScreen({
+  config,
+  onLogin
+}) {
+  const [selected, setSelected] = useState(null);
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const profiles = [{
+    name: config.nameA,
+    password: config.passwordA
+  }, {
+    name: config.nameB,
+    password: config.passwordB
+  }];
+  const submit = e => {
+    e.preventDefault();
+    const profile = profiles.find(p => p.name === selected);
+    if (profile && password === profile.password) {
+      setError('');
+      onLogin(selected);
+    } else {
+      setError('That password doesn\u2019t match — try again.');
+    }
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+      position: 'relative'
+    }
+  }, /*#__PURE__*/React.createElement(SparkleField, null), /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 400,
+      width: '100%',
+      position: 'relative',
+      zIndex: 1
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: 'center',
+      marginBottom: 26
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.rose,
+      fontSize: 26,
+      textShadow: '0 0 20px rgba(227,160,187,0.6)'
+    }
+  }, "❤"), /*#__PURE__*/React.createElement("h1", {
+    style: {
+      fontFamily: "'Give You Glory', cursive",
+      color: C.cream,
+      fontSize: 40,
+      fontWeight: 400,
+      marginTop: 4
+    }
+  }, config.nameA, " & ", config.nameB)), !selected ? /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-col gap-3"
+  }, profiles.map(p => /*#__PURE__*/React.createElement("button", {
+    key: p.name,
+    onClick: () => {
+      setSelected(p.name);
+      setError('');
+    },
+    style: {
+      background: C.panelGlass,
+      backdropFilter: 'blur(16px)',
+      border: `1px solid ${C.line}`,
+      borderRadius: 18,
+      padding: '18px 20px',
+      color: C.cream,
+      fontFamily: "'Fraunces', serif",
+      fontSize: 18,
+      fontWeight: 600,
+      cursor: 'pointer',
+      textAlign: 'left',
+      boxShadow: '0 14px 30px rgba(107,30,66,0.35)'
+    }
+  }, p.name))) : /*#__PURE__*/React.createElement("form", {
+    onSubmit: submit,
+    style: {
+      background: C.panelGlass,
+      backdropFilter: 'blur(16px)',
+      border: `1px solid ${C.line}`,
+      borderRadius: 20,
+      padding: 24,
+      boxShadow: '0 25px 60px rgba(107,30,66,0.45)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.gold,
+      fontFamily: "'Cormorant Garamond', serif",
+      fontStyle: 'italic',
+      fontSize: 15,
+      marginBottom: 10
+    }
+  }, "Welcome back, ", selected), /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    autoFocus: true,
+    value: password,
+    onChange: e => setPassword(e.target.value),
+    placeholder: "Your password",
+    style: inputStyle
+  }), error && /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: C.rose,
+      fontSize: 13,
+      marginTop: 10
+    }
+  }, error), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8,
+      marginTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => {
+      setSelected(null);
+      setPassword('');
+      setError('');
+    },
+    style: {
+      flex: 1,
+      padding: '10px 0',
+      borderRadius: 12,
+      background: 'transparent',
+      border: `1px solid ${C.line}`,
+      color: C.creamAlt,
+      cursor: 'pointer'
+    }
+  }, "Back"), /*#__PURE__*/React.createElement("button", {
+    type: "submit",
+    style: {
+      flex: 2,
+      padding: '10px 0',
+      borderRadius: 12,
+      background: GRAD_PRIMARY,
+      border: 'none',
+      color: C.cream,
+      fontWeight: 600,
+      cursor: 'pointer',
+      boxShadow: '0 8px 22px rgba(156,47,83,0.4)'
+    }
+  }, "Enter")))));
+}
+function WelcomeOverlay({
+  name,
+  onDone
+}) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 1900);
+    return () => clearTimeout(t);
+  }, [onDone]);
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: 'fixed',
+      inset: 0,
+      zIndex: 50,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'linear-gradient(160deg, #1B0E1F 0%, #240F28 45%, #1B0E1F 100%)',
+      animation: 'welcomeFade 1.9s ease forwards'
+    }
+  }, /*#__PURE__*/React.createElement(SparkleField, null), /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: 'center',
+      position: 'relative',
+      zIndex: 1,
+      animation: 'welcomeText 1.9s ease forwards'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.gold,
+      letterSpacing: 4,
+      fontSize: 13,
+      textTransform: 'uppercase',
+      fontFamily: "'Cormorant Garamond', serif",
+      fontStyle: 'italic'
+    }
+  }, "Welcome back"), /*#__PURE__*/React.createElement("h1", {
+    style: {
+      fontFamily: "'Give You Glory', cursive",
+      color: C.cream,
+      fontSize: 56,
+      fontWeight: 400,
+      marginTop: 6,
+      textShadow: '0 0 30px rgba(213,168,214,0.5)'
+    }
+  }, name)));
+}
 function PhotoWall({
   photos,
   addPhoto,
@@ -621,7 +868,7 @@ function PhotoWall({
     type: "submit",
     disabled: busy,
     style: {
-      background: C.roseDark,
+      background: GRAD_PRIMARY,
       color: C.cream,
       fontWeight: 600,
       padding: '9px 18px',
@@ -648,7 +895,7 @@ function PhotoWall({
       borderRadius: 4,
       padding: 12,
       paddingBottom: 16,
-      boxShadow: '0 10px 24px rgba(0,0,0,0.28)',
+      boxShadow: '0 14px 30px rgba(107,30,66,0.35)',
       transform: `rotate(${p.rot || 0}deg)`
     }
   }, /*#__PURE__*/React.createElement("img", {
@@ -931,7 +1178,7 @@ function Photobooth({
   }, !active ? /*#__PURE__*/React.createElement("button", {
     onClick: startCamera,
     style: {
-      background: C.roseDark,
+      background: GRAD_PRIMARY,
       color: C.cream,
       fontWeight: 600,
       padding: '10px 20px',
@@ -988,7 +1235,7 @@ function Photobooth({
     style: {
       width: '100%',
       borderRadius: 10,
-      boxShadow: '0 12px 26px rgba(0,0,0,0.25)'
+      boxShadow: '0 16px 34px rgba(107,30,66,0.4)'
     }
   }), /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1000,7 +1247,7 @@ function Photobooth({
   }, /*#__PURE__*/React.createElement("button", {
     onClick: saveToWall,
     style: {
-      background: C.roseDark,
+      background: GRAD_PRIMARY,
       color: C.cream,
       fontWeight: 600,
       padding: '9px 0',
@@ -1173,7 +1420,7 @@ function Tasks({
   }), /*#__PURE__*/React.createElement("button", {
     type: "submit",
     style: {
-      background: C.roseDark,
+      background: GRAD_PRIMARY,
       color: C.cream,
       fontWeight: 600,
       padding: '9px 16px',
@@ -1344,7 +1591,7 @@ function Notes({
     type: "submit",
     style: {
       marginLeft: 'auto',
-      background: C.roseDark,
+      background: GRAD_PRIMARY,
       color: C.cream,
       fontWeight: 600,
       padding: '9px 18px',
@@ -1510,6 +1757,33 @@ function Rewards({
 }
 
 /* ============================================================= APP */
+function SparkleField() {
+  const sparkles = React.useMemo(() => Array.from({
+    length: 26
+  }).map((_, i) => ({
+    id: i,
+    top: Math.random() * 100,
+    left: Math.random() * 100,
+    size: Math.random() * 2 + 1,
+    delay: Math.random() * 4,
+    duration: 3 + Math.random() * 3
+  })), []);
+  return /*#__PURE__*/React.createElement("div", {
+    className: "sparkle-field",
+    "aria-hidden": "true"
+  }, sparkles.map(s => /*#__PURE__*/React.createElement("span", {
+    key: s.id,
+    className: "sparkle",
+    style: {
+      top: s.top + '%',
+      left: s.left + '%',
+      width: s.size + 'px',
+      height: s.size + 'px',
+      animationDelay: s.delay + 's',
+      animationDuration: s.duration + 's'
+    }
+  })));
+}
 function App() {
   const [loading, setLoading] = useState(true);
   const [needsSetupPrompt, setNeedsSetupPrompt] = useState(!supabase);
@@ -1520,6 +1794,8 @@ function App() {
   const [rewards, setRewards] = useState(DEFAULT_REWARDS);
   const [tab, setTab] = useState('wall');
   const [activeUser, setActiveUser] = useState('');
+  const [authedUser, setAuthedUser] = useState(null);
+  const [showWelcome, setShowWelcome] = useState(false);
   const skipNextSave = useRef({});
 
   // initial load
@@ -1617,7 +1893,25 @@ function App() {
       onDone: c => {
         setConfig(c);
         setActiveUser(c.nameA);
+        setAuthedUser(c.nameA);
+        setShowWelcome(true);
       }
+    });
+  }
+  if (!authedUser) {
+    return /*#__PURE__*/React.createElement(LoginScreen, {
+      config: config,
+      onLogin: name => {
+        setAuthedUser(name);
+        setActiveUser(name);
+        setShowWelcome(true);
+      }
+    });
+  }
+  if (showWelcome) {
+    return /*#__PURE__*/React.createElement(WelcomeOverlay, {
+      name: authedUser,
+      onDone: () => setShowWelcome(false)
     });
   }
   const tabs = [{
@@ -1642,10 +1936,11 @@ function App() {
   return /*#__PURE__*/React.createElement("div", {
     style: {
       minHeight: '100vh',
-      background: C.bg,
-      fontFamily: "'Inter', sans-serif"
+      background: 'transparent',
+      fontFamily: "'Inter', sans-serif",
+      position: 'relative'
     }
-  }, needsSetupPrompt && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(SparkleField, null), needsSetupPrompt && /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.gold,
       color: C.ink,
@@ -1658,7 +1953,9 @@ function App() {
     style: {
       maxWidth: 980,
       margin: '0 auto',
-      padding: '32px 20px 70px'
+      padding: '32px 20px 70px',
+      position: 'relative',
+      zIndex: 1
     }
   }, /*#__PURE__*/React.createElement("header", {
     style: {
@@ -1682,52 +1979,71 @@ function App() {
   }, /*#__PURE__*/React.createElement("span", {
     style: {
       color: C.rose,
-      fontSize: 20
+      fontSize: 22,
+      textShadow: '0 0 16px rgba(227,160,187,0.6)'
     }
   }, "❤"), /*#__PURE__*/React.createElement("span", {
     style: {
-      fontFamily: "'Fraunces', serif",
-      fontSize: 22,
+      fontFamily: "'Give You Glory', cursive",
+      fontSize: 30,
       color: C.cream,
-      fontWeight: 600
+      fontWeight: 400,
+      letterSpacing: 1
     }
   }, config.nameA, " & ", config.nameB)), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 6
+      alignItems: 'center',
+      gap: 10
     }
-  }, [config.nameA, config.nameB].map(n => /*#__PURE__*/React.createElement("button", {
-    key: n,
-    onClick: () => setActiveUser(n),
+  }, /*#__PURE__*/React.createElement("span", {
     style: {
-      padding: '6px 12px',
+      fontSize: 12,
+      color: C.creamAlt,
+      fontFamily: "'Cormorant Garamond', serif",
+      fontStyle: 'italic'
+    }
+  }, "signed in as ", /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: C.gold,
+      fontStyle: 'normal'
+    }
+  }, authedUser)), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setAuthedUser(null);
+    },
+    style: {
+      padding: '6px 14px',
       borderRadius: 999,
       fontSize: 12,
-      border: `1px solid ${activeUser === n ? C.gold : C.line}`,
-      background: activeUser === n ? 'rgba(201,161,90,0.18)' : 'transparent',
-      color: activeUser === n ? C.gold : C.cream,
+      border: `1px solid ${C.line}`,
+      background: 'transparent',
+      color: C.creamAlt,
       cursor: 'pointer'
     }
-  }, n)))), /*#__PURE__*/React.createElement("div", {
+  }, "Log out"))), /*#__PURE__*/React.createElement("div", {
     style: {
       height: 1,
-      background: C.line,
-      marginBottom: 14
+      background: `linear-gradient(90deg, transparent, ${C.gold}, transparent)`,
+      opacity: 0.5,
+      marginBottom: 16
     }
   }), /*#__PURE__*/React.createElement("div", {
-    className: "flex gap-1 flex-wrap"
+    className: "flex gap-2 flex-wrap"
   }, tabs.map(t => /*#__PURE__*/React.createElement("button", {
     key: t.id,
     onClick: () => setTab(t.id),
     style: {
-      padding: '8px 16px',
+      padding: '9px 18px',
       fontSize: 13,
       fontWeight: 600,
-      border: 'none',
+      border: tab === t.id ? 'none' : `1px solid ${C.line}`,
       cursor: 'pointer',
-      borderRadius: '10px 10px 0 0',
-      background: tab === t.id ? C.cream : 'transparent',
-      color: tab === t.id ? C.ink : C.inkSoft
+      borderRadius: 999,
+      background: tab === t.id ? GRAD_GOLD : 'rgba(251,243,233,0.04)',
+      color: tab === t.id ? C.ink : C.creamAlt,
+      boxShadow: tab === t.id ? '0 4px 18px rgba(217,184,118,0.35)' : 'none',
+      transition: 'all 0.2s'
     }
   }, t.label)))), /*#__PURE__*/React.createElement("main", null, tab === 'wall' && /*#__PURE__*/React.createElement(PhotoWall, {
     photos: photos,
