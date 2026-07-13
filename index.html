@@ -894,17 +894,7 @@ function Polaroid({ p, i, onOpen, onSaveCaption, onDelete }) {
 function PhotoLightbox({ photo, onClose, onSaveCaption, onDelete }) {
   const [caption, setCaption] = useState(photo.caption || '');
   const [editing, setEditing] = useState(false);
-  const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
-  const imgRef = useRef(null);
-  useEffect(() => {
-    // If the image is already in the browser cache, the load event can fire
-    // before this component even mounts — so onLoad never fires and the
-    // spinner gets stuck forever. Check img.complete directly as a fallback.
-    if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
-      setImgLoaded(true);
-    }
-  }, [photo.src]);
   const save = e => {
     e.preventDefault();
     onSaveCaption(caption.trim());
@@ -924,21 +914,14 @@ function PhotoLightbox({ photo, onClose, onSaveCaption, onDelete }) {
           background: C.accent, color: '#fff', border: '2px solid #fff', cursor: 'pointer', fontSize: 15,
           display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.25)'
         }}>✕</button>
-        <div style={{ position: 'relative', minHeight: imgLoaded || imgError ? 0 : 180 }}>
-          {!imgLoaded && !imgError && (
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f2ede4' }}>
-              <PencilHeartLoader />
-            </div>
-          )}
-          {imgError ? (
-            <div style={{ padding: '40px 20px', textAlign: 'center', color: C.sub, fontSize: 14, background: '#f2ede4' }}>
-              Couldn\u2019t load this photo — it may still be uploading, or your connection dropped. Try closing and reopening it.
-            </div>
-          ) : (
-            <img ref={imgRef} src={photo.src} alt="" onLoad={() => setImgLoaded(true)} onError={() => setImgError(true)}
-              style={{ width: '100%', maxHeight: '60vh', objectFit: 'contain', display: imgLoaded ? 'block' : 'none', background: '#111' }} />
-          )}
-        </div>
+        {imgError ? (
+          <div style={{ padding: '40px 20px', textAlign: 'center', color: C.sub, fontSize: 14, background: '#f2ede4' }}>
+            Couldn\u2019t load this photo — it may still be uploading, or your connection dropped. Try closing and reopening it.
+          </div>
+        ) : (
+          <img src={photo.src} alt="" onError={() => setImgError(true)}
+            style={{ width: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block', background: '#111', minHeight: 120 }} />
+        )}
         <div style={{ marginTop: 12, padding: '0 4px' }}>
           <div style={{ fontFamily: 'Indie Flower', fontSize: 13, color: C.faint }}>{formatWhen(photo.at, photo.date)}</div>
           {!editing ? (
