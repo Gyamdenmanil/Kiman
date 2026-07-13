@@ -1819,9 +1819,10 @@ function HomePage({ config, photos, addPhoto, updatePhoto, deletePhoto, tasksDat
       ) : (
         <Paper rotate={-0.5} style={{ padding: 16, marginBottom: 30, textAlign: 'center', color: C.sub, fontSize: 15 }}>No memories yet — add your first one!</Paper>
       )}
-      {selectedPhoto && (
+      {selectedPhoto && ReactDOM.createPortal(
         <PhotoLightbox photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} onSaveCaption={c => { updatePhoto(selectedPhoto.id, { caption: c }); setSelectedPhoto(p => p && { ...p, caption: c }); }}
-          onDelete={() => { deletePhoto(selectedPhoto.id); setSelectedPhoto(null); }} />
+          onDelete={() => { deletePhoto(selectedPhoto.id); setSelectedPhoto(null); }} />,
+        document.body
       )}
 
       <div style={{ textAlign: 'center' }}>
