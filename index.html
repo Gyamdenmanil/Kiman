@@ -337,6 +337,12 @@ async function patchPhotoDoc(id, patch) {
     });
   } catch (e) { console.error('patchPhotoDoc failed', e); }
 }
+async function deletePhotoDoc(id) {
+  try {
+    const res = await authedFetch(photoDocUrl(id), { method: 'DELETE' });
+    return res.ok;
+  } catch (e) { console.error('deletePhotoDoc failed', e); return false; }
+}
 
 /* ---------------- helpers ---------------- */
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
@@ -371,6 +377,21 @@ async function uploadToCloudinary(dataUrl) {
   if (!res.ok) throw new Error('Cloudinary upload failed');
   const data = await res.json();
   return data.secure_url;
+}
+// Draws a video frame into a canvas like CSS `object-fit: cover` — crops to fill the
+// target size while preserving the video's real aspect ratio, instead of stretching/
+// squashing it to fit (which is what plain drawImage(video, 0, 0, w, h) does).
+function drawVideoCover(ctx, video, destW, destH) {
+  const vw = video.videoWidth || destW, vh = video.videoHeight || destH;
+  const targetRatio = destW / destH;
+  const srcRatio = vw / vh;
+  let sx, sy, sw, sh;
+  if (srcRatio > targetRatio) {
+    sh = vh; sw = vh * targetRatio; sx = (vw - sw) / 2; sy = 0;
+  } else {
+    sw = vw; sh = vw / targetRatio; sx = 0; sy = (vh - sh) / 2;
+  }
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, destW, destH);
 }
 function compressImage(file, maxSize = 1400, quality = 0.85) {
   return new Promise((resolve, reject) => {
@@ -828,7 +849,7 @@ function WelcomeOverlay({ name, onDone }) {
 }
 
 /* ============================================================= POLAROID WALL (Memories) */
-function Polaroid({ p, i, onOpen, onSaveCaption }) {
+function Polaroid({ p, i, onOpen, onSaveCaption, onDelete }) {
   const rot = (i % 2 === 0 ? -1 : 1) * (2 + (i * 7) % 5);
   const taped = i % 3 !== 1;
   const flowered = i % 4 === 2;
@@ -841,6 +862,13 @@ function Polaroid({ p, i, onOpen, onSaveCaption }) {
     }}>
       {taped && <Tape style={{ top: -10, left: '50%', marginLeft: -28, transform: 'rotate(-2deg)' }} />}
       {flowered && <div style={{ position: 'absolute', top: -14, right: -10 }}><Doodle type="flower" size={30} /></div>}
+      {onDelete && (
+        <button onClick={e => { e.stopPropagation(); onDelete(); }} className="press" title="Delete photo" style={{
+          position: 'absolute', top: -8, right: -8, width: 24, height: 24, borderRadius: '50%', zIndex: 2,
+          background: '#fff', border: `1.5px solid ${C.line}`, color: C.faint, cursor: 'pointer', fontSize: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(58,46,40,0.18)'
+        }}>✕</button>
+      )}
       <div onClick={onOpen} style={{ overflow: 'hidden', background: '#eee', aspectRatio: '1/1', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
         <img src={p.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
       </div>
@@ -863,11 +891,20 @@ function Polaroid({ p, i, onOpen, onSaveCaption }) {
   );
 }
 
-function PhotoLightbox({ photo, onClose, onSaveCaption }) {
+function PhotoLightbox({ photo, onClose, onSaveCaption, onDelete }) {
   const [caption, setCaption] = useState(photo.caption || '');
   const [editing, setEditing] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const imgRef = useRef(null);
+  useEffect(() => {
+    // If the image is already in the browser cache, the load event can fire
+    // before this component even mounts — so onLoad never fires and the
+    // spinner gets stuck forever. Check img.complete directly as a fallback.
+    if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+      setImgLoaded(true);
+    }
+  }, [photo.src]);
   const save = e => {
     e.preventDefault();
     onSaveCaption(caption.trim());
@@ -898,7 +935,7 @@ function PhotoLightbox({ photo, onClose, onSaveCaption }) {
               Couldn\u2019t load this photo — it may still be uploading, or your connection dropped. Try closing and reopening it.
             </div>
           ) : (
-            <img src={photo.src} alt="" onLoad={() => setImgLoaded(true)} onError={() => setImgError(true)}
+            <img ref={imgRef} src={photo.src} alt="" onLoad={() => setImgLoaded(true)} onError={() => setImgError(true)}
               style={{ width: '100%', maxHeight: '60vh', objectFit: 'contain', display: imgLoaded ? 'block' : 'none', background: '#111' }} />
           )}
         </div>
@@ -909,9 +946,16 @@ function PhotoLightbox({ photo, onClose, onSaveCaption }) {
               <div style={{ fontFamily: 'Shadows Into Light', fontSize: 19, color: C.accentDark }}>
                 {photo.caption ? `"${photo.caption}"` : <span style={{ color: C.faint, fontFamily: "'Patrick Hand', cursive", fontSize: 15 }}>No note yet</span>}
               </div>
-              <button onClick={() => setEditing(true)} className="press" style={{ background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
-                <Doodle type="pencil" size={16} inline stroke={C.sub} />
-              </button>
+              <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+                <button onClick={() => setEditing(true)} className="press" style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                  <Doodle type="pencil" size={16} inline stroke={C.sub} />
+                </button>
+                {onDelete && (
+                  <button onClick={onDelete} className="press" title="Delete photo" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#B5533F', fontSize: 13 }}>
+                    Delete
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <form onSubmit={save} style={{ display: 'flex', gap: 8, marginTop: 6 }}>
@@ -1370,9 +1414,15 @@ function ShiftForm({ onAddShift }) {
     <Paper rotate={-0.5} tone={1} style={{ padding: 16, marginBottom: 20 }}>
       <div style={{ fontFamily: 'Indie Flower', fontSize: 13, color: C.faint, marginBottom: 8 }}>ADD A SHIFT</div>
       <form onSubmit={submit} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <Input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ flex: 1, minWidth: 140 }} />
-        <Input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Morning shift (optional)" style={{ flex: 2, minWidth: 160 }} />
-        <Btn type="submit" variant="accent" rot={1}>Add Shift</Btn>
+        <div style={{ flex: 1, minWidth: 140 }}>
+          <div style={{ fontFamily: 'Indie Flower', fontSize: 12, color: C.sub, marginBottom: 3 }}>Date</div>
+          <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </div>
+        <div style={{ flex: 2, minWidth: 160 }}>
+          <div style={{ fontFamily: 'Indie Flower', fontSize: 12, color: C.sub, marginBottom: 3 }}>Label (optional)</div>
+          <Input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Morning shift" />
+        </div>
+        <Btn type="submit" variant="accent" rot={1} style={{ alignSelf: 'flex-end' }}>Add Shift</Btn>
       </form>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <Btn type="button" variant="subtle" onClick={() => setLabel('Morning shift')} rot={-1}>Morning shift</Btn>
@@ -1417,6 +1467,38 @@ function CalendarView({ plans, config }) {
   for (let i = 0; i < firstDow; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
+  // ---- this week's day-off-together status ----
+  const dow = now.getDay();
+  const weekStartD = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
+  const weekEndD = new Date(weekStartD.getFullYear(), weekStartD.getMonth(), weekStartD.getDate() + 6);
+  const fmtISO = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const weekStartStr = fmtISO(weekStartD), weekEndStr = fmtISO(weekEndD);
+  const aRangeW = rangeByPerson[config.nameA];
+  const bRangeW = rangeByPerson[config.nameB];
+  const aSubmittedWeek = aRangeW && aRangeW.min <= weekStartStr && aRangeW.max >= weekEndStr;
+  const bSubmittedWeek = bRangeW && bRangeW.min <= weekStartStr && bRangeW.max >= weekEndStr;
+  let weekDaysOff = 0;
+  if (aSubmittedWeek && bSubmittedWeek) {
+    for (let d = new Date(weekStartD); d <= weekEndD; d.setDate(d.getDate() + 1)) {
+      const ds = fmtISO(d);
+      const aW = shiftsByPerson[config.nameA] && shiftsByPerson[config.nameA].has(ds);
+      const bW = shiftsByPerson[config.nameB] && shiftsByPerson[config.nameB].has(ds);
+      if (!aW && !bW) weekDaysOff++;
+    }
+  }
+  let weekStatus;
+  if (!aSubmittedWeek && !bSubmittedWeek) {
+    weekStatus = { text: `Waiting on both of you to add this week's shifts.`, tone: 'wait' };
+  } else if (!aSubmittedWeek) {
+    weekStatus = { text: `Waiting on ${config.nameA} to add this week's shifts.`, tone: 'wait' };
+  } else if (!bSubmittedWeek) {
+    weekStatus = { text: `Waiting on ${config.nameB} to add this week's shifts.`, tone: 'wait' };
+  } else if (weekDaysOff > 0) {
+    weekStatus = { text: `${weekDaysOff} day${weekDaysOff > 1 ? 's' : ''} off together this week! 💕`, tone: 'good' };
+  } else {
+    weekStatus = { text: `No days off together this week 😢`, tone: 'sad' };
+  }
+
   const selEntries = selectedDate ? (entriesByDate[selectedDate] || []) : [];
   const selPlans = selectedDate ? (planEntriesByDate[selectedDate] || []) : [];
   const selAWorking = selectedDate && shiftsByPerson[config.nameA] && shiftsByPerson[config.nameA].has(selectedDate);
@@ -1427,6 +1509,12 @@ function CalendarView({ plans, config }) {
 
   return (
     <Paper rotate={0.3} tone={0} style={{ padding: 16, marginBottom: 20 }}>
+      <div style={{
+        textAlign: 'center', padding: '8px 12px', borderRadius: 999, marginBottom: 12, fontSize: 13,
+        fontFamily: "'Patrick Hand', cursive",
+        background: weekStatus.tone === 'good' ? C.accentSoft : weekStatus.tone === 'sad' ? '#F0E3E0' : '#F2EFE8',
+        color: C.ink
+      }}>{weekStatus.text}</div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <button onClick={() => setMonthOffset(m => m - 1)} className="press" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: C.ink }}>‹</button>
         <div style={{ fontFamily: 'Caveat', fontSize: 22, fontWeight: 700, color: C.ink }}>{monthLabel}</div>
@@ -1536,10 +1624,19 @@ function PlansPage({ plans, setPlans, config, activeUser }) {
 
       <ShiftForm onAddShift={addShift} />
 
-      <form onSubmit={add} style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-        <Input value={text} onChange={e => setText(e.target.value)} placeholder="A date idea, a trip…" style={{ flex: 2, minWidth: 160 }} />
-        <Input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ flex: 1, minWidth: 140 }} />
-        <Input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ flex: 1, minWidth: 110 }} />
+      <form onSubmit={add} style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div style={{ flex: 2, minWidth: 160 }}>
+          <div style={{ fontFamily: 'Indie Flower', fontSize: 12, color: C.sub, marginBottom: 3 }}>Idea</div>
+          <Input value={text} onChange={e => setText(e.target.value)} placeholder="A date idea, a trip…" />
+        </div>
+        <div style={{ flex: 1, minWidth: 140 }}>
+          <div style={{ fontFamily: 'Indie Flower', fontSize: 12, color: C.sub, marginBottom: 3 }}>Date</div>
+          <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
+        </div>
+        <div style={{ flex: 1, minWidth: 110 }}>
+          <div style={{ fontFamily: 'Indie Flower', fontSize: 12, color: C.sub, marginBottom: 3 }}>Time</div>
+          <Input type="time" value={time} onChange={e => setTime(e.target.value)} />
+        </div>
         <Btn type="submit" variant="accent" rot={1}>Add</Btn>
       </form>
 
@@ -1596,7 +1693,7 @@ function KikiBubble({ label, entry, flip, figure = 'kiki', onClear }) {
 }
 
 /* ============================================================= HOME */
-function HomePage({ config, photos, addPhoto, updatePhoto, tasksData, activeUser, plans, status, setStatus, statusLog, setStatusLog, goTo, openBooth, openTurnBooth, openQuickCamera, onSignOut }) {
+function HomePage({ config, photos, addPhoto, updatePhoto, deletePhoto, tasksData, activeUser, plans, status, setStatus, statusLog, setStatusLog, goTo, openBooth, openTurnBooth, openQuickCamera, onSignOut }) {
   const partnerName = activeUser === config.nameA ? config.nameB : config.nameA;
   const myLog = statusLog[activeUser] || [];
   const theirLog = statusLog[partnerName] || [];
@@ -1733,14 +1830,15 @@ function HomePage({ config, photos, addPhoto, updatePhoto, tasksData, activeUser
       {sortedPhotos.length > 0 ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 22, marginBottom: 30 }}>
           {sortedPhotos.map((p, i) => (
-            <Polaroid key={p.id} p={p} i={i} onOpen={() => setSelectedPhoto(p)} onSaveCaption={c => updatePhoto(p.id, { caption: c })} />
+            <Polaroid key={p.id} p={p} i={i} onOpen={() => setSelectedPhoto(p)} onSaveCaption={c => updatePhoto(p.id, { caption: c })} onDelete={() => deletePhoto(p.id)} />
           ))}
         </div>
       ) : (
         <Paper rotate={-0.5} style={{ padding: 16, marginBottom: 30, textAlign: 'center', color: C.sub, fontSize: 15 }}>No memories yet — add your first one!</Paper>
       )}
       {selectedPhoto && (
-        <PhotoLightbox photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} onSaveCaption={c => { updatePhoto(selectedPhoto.id, { caption: c }); setSelectedPhoto(p => p && { ...p, caption: c }); }} />
+        <PhotoLightbox photo={selectedPhoto} onClose={() => setSelectedPhoto(null)} onSaveCaption={c => { updatePhoto(selectedPhoto.id, { caption: c }); setSelectedPhoto(p => p && { ...p, caption: c }); }}
+          onDelete={() => { deletePhoto(selectedPhoto.id); setSelectedPhoto(null); }} />
       )}
 
       <div style={{ textAlign: 'center' }}>
@@ -1805,7 +1903,7 @@ function QuickCamera({ addPhoto, onClose }) {
     canvas.width = 400; canvas.height = 300;
     const ctx = canvas.getContext('2d');
     ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    drawVideoCover(ctx, video, canvas.width, canvas.height);
     setShot(canvas.toDataURL('image/jpeg', 0.9));
   };
   const save = async () => {
@@ -1888,7 +1986,7 @@ function Photobooth({ addPhoto, onClose }) {
     canvas.width = 400; canvas.height = 300;
     const ctx = canvas.getContext('2d');
     ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    drawVideoCover(ctx, video, canvas.width, canvas.height);
     setShots(s => [...s, canvas.toDataURL('image/jpeg', 0.9)].slice(0, 4));
   };
   const activeFilter = PHOTO_FILTERS.find(f => f.key === filter) || PHOTO_FILTERS[0];
@@ -2020,7 +2118,7 @@ function TurnPhotobooth({ activeUser, config, addPhoto, onClose }) {
       canvas.width = 480; canvas.height = 360;
       const ctx = canvas.getContext('2d');
       ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      drawVideoCover(ctx, video, canvas.width, canvas.height);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
       const url = await uploadToCloudinary(dataUrl);
 
@@ -2290,6 +2388,10 @@ function App() {
     setPhotos(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
     patchPhotoDoc(id, patch);
   };
+  const deletePhoto = id => {
+    setPhotos(prev => prev.filter(p => p.id !== id));
+    deletePhotoDoc(id);
+  };
   const addNote = n => setNotes(prev => [...prev, n]);
   const removeNote = id => setNotes(prev => prev.filter(n => n.id !== id));
 
@@ -2307,7 +2409,7 @@ function App() {
   }
 
   const pages = [
-    <HomePage key="home" config={config} photos={photos} addPhoto={addPhoto} updatePhoto={updatePhoto} tasksData={tasksData} activeUser={authedUser} plans={plans}
+    <HomePage key="home" config={config} photos={photos} addPhoto={addPhoto} updatePhoto={updatePhoto} deletePhoto={deletePhoto} tasksData={tasksData} activeUser={authedUser} plans={plans}
       status={status} setStatus={setStatus} statusLog={statusLog} setStatusLog={setStatusLog} goTo={setTab} openBooth={() => setShowPhotobooth(true)} openTurnBooth={() => setShowTurnPhotobooth(true)} openQuickCamera={() => setShowQuickCamera(true)} onSignOut={() => setAuthedUser(null)} />,
     <NotesPage key="notes" notes={notes} addNote={addNote} removeNote={removeNote} activeUser={authedUser} />,
     <TogetherPage key="together" tasksData={tasksData} setTasksData={setTasksData} activeUser={authedUser} rewards={rewards} setRewards={setRewards} />,
