@@ -2270,9 +2270,29 @@ function GoogleSignInScreen() {
   const [err, setErr] = useState('');
   const go = async () => {
     setBusy(true); setErr('');
-    try { await signInWithGoogle(); } catch (e) { console.error('signInWithGoogle failed', e); setErr('Sign-in didn\u2019t go through — try again.'); }
+    try {
+      await signInWithGoogle();
+    } catch (e) {
+      console.error('signInWithGoogle failed', e);
+      const code = e && e.code;
+      // Popups are unreliable on mobile browsers and don't work at all in iOS
+      // "Add to Home Screen" standalone mode — fall back to a full-page redirect.
+      if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment' || code === 'auth/popup-closed-by-user') {
+        try { await fbAuth.signInWithRedirect(new firebase.auth.GoogleAuthProvider()); return; }
+        catch (e2) { console.error('signInWithRedirect fallback failed', e2); setErr('(' + ((e2 && e2.code) || 'unknown') + ') ' + ((e2 && e2.message) || 'Sign-in failed.')); }
+      } else {
+        setErr('(' + (code || 'unknown') + ') ' + ((e && e.message) || 'Sign-in failed.'));
+      }
+    }
     setBusy(false);
   };
+  // If we got bounced back here after a redirect sign-in, surface any error from that flow too.
+  useEffect(() => {
+    fbAuth.getRedirectResult().catch(e => {
+      console.error('getRedirectResult failed', e);
+      setErr('(' + ((e && e.code) || 'unknown') + ') ' + ((e && e.message) || 'Sign-in failed.'));
+    });
+  }, []);
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, position: 'relative', overflow: 'hidden', background: '#EFE0C4' }}>
       <LoginBackgroundWords />
@@ -2284,7 +2304,7 @@ function GoogleSignInScreen() {
           <Btn variant="accent" onClick={go} disabled={busy} style={{ width: '100%', padding: '13px 0' }} rot={0}>
             {busy ? 'Signing in\u2026' : 'Sign in with Google'}
           </Btn>
-          {err && <div style={{ fontSize: 13, color: '#B5533F', marginTop: 10 }}>{err}</div>}
+          {err && <div style={{ fontSize: 13, color: '#B5533F', marginTop: 10, wordBreak: 'break-word' }}>{err}</div>}
         </Paper>
       </div>
     </div>
