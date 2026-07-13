@@ -220,13 +220,14 @@ async function fetchPhotos() {
         id,
         src: (f.src && f.src.stringValue) || '',
         date: (f.date && f.date.stringValue) || '',
+        at: (f.at && f.at.stringValue) ? Number(f.at.stringValue) : null,
         caption: (f.caption && f.caption.stringValue) || ''
       };
     });
   } catch (e) { console.error('fetchPhotos failed', e); return null; }
 }
 async function createPhotoDoc(p) {
-  const fields = { src: { stringValue: p.src || '' }, date: { stringValue: p.date || '' } };
+  const fields = { src: { stringValue: p.src || '' }, date: { stringValue: p.date || '' }, at: { stringValue: String(p.at || Date.now()) } };
   if (p.caption) fields.caption = { stringValue: p.caption };
   try {
     const res = await authedFetch(photoDocUrl(), {
@@ -340,6 +341,20 @@ async function patchPhotoDoc(id, patch) {
 /* ---------------- helpers ---------------- */
 function uid() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
 function todayStr() { return new Date().toISOString().split('T')[0]; }
+function formatWhen(at, dateFallback) {
+  if (at) {
+    const d = new Date(at);
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' · ' + d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+  return dateFallback || '';
+}
+function formatTime12(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
 function daysBetween(dateStr) {
   if (!dateStr) return 0;
   const start = new Date(dateStr).getTime();
@@ -826,11 +841,11 @@ function Polaroid({ p, i, onOpen, onSaveCaption }) {
     }}>
       {taped && <Tape style={{ top: -10, left: '50%', marginLeft: -28, transform: 'rotate(-2deg)' }} />}
       {flowered && <div style={{ position: 'absolute', top: -14, right: -10 }}><Doodle type="flower" size={30} /></div>}
-      <div onClick={onOpen} style={{ overflow: 'hidden', background: '#eee', cursor: 'pointer' }}>
-        <img src={p.src} alt="" style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', display: 'block' }} />
+      <div onClick={onOpen} style={{ overflow: 'hidden', background: '#eee', aspectRatio: '1/1', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <img src={p.src} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '0 2px' }}>
-        <div style={{ fontFamily: 'Indie Flower', fontSize: 11, color: C.faint, flexShrink: 0 }}>{p.date || ''}</div>
+        <div style={{ fontFamily: 'Indie Flower', fontSize: 11, color: C.faint, flexShrink: 0 }}>{formatWhen(p.at, p.date)}</div>
         <input
           value={p.caption || ''}
           onChange={e => onSaveCaption(e.target.value)}
@@ -851,6 +866,8 @@ function Polaroid({ p, i, onOpen, onSaveCaption }) {
 function PhotoLightbox({ photo, onClose, onSaveCaption }) {
   const [caption, setCaption] = useState(photo.caption || '');
   const [editing, setEditing] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
   const save = e => {
     e.preventDefault();
     onSaveCaption(caption.trim());
@@ -870,9 +887,23 @@ function PhotoLightbox({ photo, onClose, onSaveCaption }) {
           background: C.accent, color: '#fff', border: '2px solid #fff', cursor: 'pointer', fontSize: 15,
           display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.25)'
         }}>✕</button>
-        <img src={photo.src} alt="" style={{ width: '100%', maxHeight: '60vh', objectFit: 'contain', display: 'block', background: '#111' }} />
+        <div style={{ position: 'relative', minHeight: imgLoaded || imgError ? 0 : 180 }}>
+          {!imgLoaded && !imgError && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f2ede4' }}>
+              <PencilHeartLoader />
+            </div>
+          )}
+          {imgError ? (
+            <div style={{ padding: '40px 20px', textAlign: 'center', color: C.sub, fontSize: 14, background: '#f2ede4' }}>
+              Couldn\u2019t load this photo — it may still be uploading, or your connection dropped. Try closing and reopening it.
+            </div>
+          ) : (
+            <img src={photo.src} alt="" onLoad={() => setImgLoaded(true)} onError={() => setImgError(true)}
+              style={{ width: '100%', maxHeight: '60vh', objectFit: 'contain', display: imgLoaded ? 'block' : 'none', background: '#111' }} />
+          )}
+        </div>
         <div style={{ marginTop: 12, padding: '0 4px' }}>
-          <div style={{ fontFamily: 'Indie Flower', fontSize: 13, color: C.faint }}>{photo.date || ''}</div>
+          <div style={{ fontFamily: 'Indie Flower', fontSize: 13, color: C.faint }}>{formatWhen(photo.at, photo.date)}</div>
           {!editing ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 4 }}>
               <div style={{ fontFamily: 'Shadows Into Light', fontSize: 19, color: C.accentDark }}>
@@ -901,7 +932,7 @@ function MemoriesPage({ photos, addPhoto, updatePhoto, openBooth, openQuickCamer
   const handleFile = async file => {
     if (!file) return;
     setBusy(true);
-    try { const compressed = await compressImage(file); const url = await uploadToCloudinary(compressed); addPhoto({ src: url, date: todayStr() }); }
+    try { const compressed = await compressImage(file); const url = await uploadToCloudinary(compressed); addPhoto({ src: url, date: todayStr(), at: Date.now() }); }
     catch (e) { alert("Couldn't read that image."); }
     setBusy(false);
   };
@@ -977,7 +1008,7 @@ function NotesPage({ notes, addNote, removeNote, activeUser }) {
                 color: 'rgba(58,46,40,0.45)', cursor: 'pointer', fontSize: 14, padding: 0
               }}>✕</button>
               <div style={{ fontFamily: 'Shadows Into Light', fontSize: 18, color: '#3A2E28', paddingRight: 16 }}>{n.text}</div>
-              <div style={{ fontFamily: 'Indie Flower', fontSize: 12, color: '#6b5d4f', marginTop: 8 }}>{n.by} · {new Date(n.at).toLocaleDateString()}</div>
+              <div style={{ fontFamily: 'Indie Flower', fontSize: 12, color: '#6b5d4f', marginTop: 8 }}>{n.by} · {formatWhen(n.at)}</div>
             </div>
           ))}
         </div>
@@ -1326,8 +1357,34 @@ function RosterScanner({ onShifts }) {
 }
 
 /* ============================================================= CALENDAR */
+function ShiftForm({ onAddShift }) {
+  const [date, setDate] = useState('');
+  const [label, setLabel] = useState('');
+  const submit = e => {
+    e.preventDefault();
+    if (!date) return;
+    onAddShift({ date, label: label.trim() });
+    setDate(''); setLabel('');
+  };
+  return (
+    <Paper rotate={-0.5} tone={1} style={{ padding: 16, marginBottom: 20 }}>
+      <div style={{ fontFamily: 'Indie Flower', fontSize: 13, color: C.faint, marginBottom: 8 }}>ADD A SHIFT</div>
+      <form onSubmit={submit} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ flex: 1, minWidth: 140 }} />
+        <Input value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Morning shift (optional)" style={{ flex: 2, minWidth: 160 }} />
+        <Btn type="submit" variant="accent" rot={1}>Add Shift</Btn>
+      </form>
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <Btn type="button" variant="subtle" onClick={() => setLabel('Morning shift')} rot={-1}>Morning shift</Btn>
+        <Btn type="button" variant="subtle" onClick={() => setLabel('Afternoon shift')} rot={1}>Afternoon shift</Btn>
+      </div>
+      <div style={{ fontSize: 12, color: C.sub, marginTop: 8 }}>Only add the days you're working — any day in your range you don't add counts as a day off.</div>
+    </Paper>
+  );
+}
 function CalendarView({ plans, config }) {
   const [monthOffset, setMonthOffset] = useState(0);
+  const [selectedDate, setSelectedDate] = useState(null);
   const now = new Date();
   const viewDate = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
   const year = viewDate.getFullYear(), month = viewDate.getMonth();
@@ -1338,6 +1395,8 @@ function CalendarView({ plans, config }) {
 
   const shiftsByPerson = {};
   const rangeByPerson = {};
+  const entriesByDate = {};
+  const planEntriesByDate = {};
   plans.filter(p => p.type === 'shift' && p.date && p.by).forEach(p => {
     if (!shiftsByPerson[p.by]) shiftsByPerson[p.by] = new Set();
     shiftsByPerson[p.by].add(p.date);
@@ -1346,11 +1405,25 @@ function CalendarView({ plans, config }) {
       if (p.date < rangeByPerson[p.by].min) rangeByPerson[p.by].min = p.date;
       if (p.date > rangeByPerson[p.by].max) rangeByPerson[p.by].max = p.date;
     }
+    if (!entriesByDate[p.date]) entriesByDate[p.date] = [];
+    entriesByDate[p.date].push(p);
+  });
+  plans.filter(p => p.type !== 'shift' && p.date).forEach(p => {
+    if (!planEntriesByDate[p.date]) planEntriesByDate[p.date] = [];
+    planEntriesByDate[p.date].push(p);
   });
 
   const cells = [];
   for (let i = 0; i < firstDow; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const selEntries = selectedDate ? (entriesByDate[selectedDate] || []) : [];
+  const selPlans = selectedDate ? (planEntriesByDate[selectedDate] || []) : [];
+  const selAWorking = selectedDate && shiftsByPerson[config.nameA] && shiftsByPerson[config.nameA].has(selectedDate);
+  const selBWorking = selectedDate && shiftsByPerson[config.nameB] && shiftsByPerson[config.nameB].has(selectedDate);
+  const selAKnown = selectedDate && rangeByPerson[config.nameA] && selectedDate >= rangeByPerson[config.nameA].min && selectedDate <= rangeByPerson[config.nameA].max;
+  const selBKnown = selectedDate && rangeByPerson[config.nameB] && selectedDate >= rangeByPerson[config.nameB].min && selectedDate <= rangeByPerson[config.nameB].max;
+  const selBothOff = selAKnown && selBKnown && !selAWorking && !selBWorking;
 
   return (
     <Paper rotate={0.3} tone={0} style={{ padding: 16, marginBottom: 20 }}>
@@ -1378,22 +1451,49 @@ function CalendarView({ plans, config }) {
           const bKnown = bRange && ds >= bRange.min && ds <= bRange.max;
           const bothOff = aKnown && bKnown && !aWorking && !bWorking;
           const someoneWorking = aWorking || bWorking;
+          const hasPlan = !!(planEntriesByDate[ds] && planEntriesByDate[ds].length);
           const isToday = ds === todayStr();
+          const isSelected = ds === selectedDate;
           return (
-            <div key={i} style={{
+            <div key={i} onClick={() => setSelectedDate(s => s === ds ? null : ds)} style={{
               aspectRatio: '1/1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              borderRadius: 8, background: isToday ? C.accentSoft : 'transparent', gap: 1
+              borderRadius: 8, background: isSelected ? C.accent : isToday ? C.accentSoft : 'transparent', gap: 1, cursor: 'pointer', position: 'relative'
             }}>
-              <div style={{ fontSize: 13, color: C.ink }}>{d}</div>
-              {bothOff ? <Doodle type="heart" size={13} inline stroke={C.accent} /> :
-                someoneWorking ? <Doodle type="cross" size={11} inline stroke={C.faint} /> : <div style={{ height: 13 }} />}
+              {hasPlan && (
+                <div style={{ position: 'absolute', top: 2, right: 2 }}>
+                  <Doodle type="check" size={10} inline stroke={isSelected ? '#fff' : '#5a9c6e'} />
+                </div>
+              )}
+              <div style={{ fontSize: 13, color: isSelected ? '#fff' : C.ink }}>{d}</div>
+              {bothOff ? <Doodle type="heart" size={13} inline stroke={isSelected ? '#fff' : C.accent} /> :
+                someoneWorking ? <Doodle type="cross" size={11} inline stroke={isSelected ? '#fff' : C.faint} /> : <div style={{ height: 13 }} />}
             </div>
           );
         })}
       </div>
+      {selectedDate && (
+        <div className="fade-up" style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, background: C.accentSoft, fontSize: 14, color: C.ink }}>
+          <div style={{ fontFamily: 'Indie Flower', fontSize: 12, color: C.sub, marginBottom: 4 }}>
+            {new Date(selectedDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}
+          </div>
+          {selPlans.map(pl => (
+            <div key={pl.id}><Doodle type="check" size={12} inline stroke="#5a9c6e" /> {pl.text}{pl.time ? ' · ' + formatTime12(pl.time) : ''}</div>
+          ))}
+          {selEntries.length > 0 ? (
+            selEntries.map(en => (
+              <div key={en.id}>{en.by} — {en.label || 'Shift'}</div>
+            ))
+          ) : selBothOff ? (
+            <div>Both of you are off today 💕</div>
+          ) : selPlans.length === 0 ? (
+            <div style={{ color: C.sub }}>No shifts logged for this day yet.</div>
+          ) : null}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 16, marginTop: 12, fontSize: 12, color: C.sub, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Doodle type="cross" size={12} inline stroke={C.faint} /> one of us is working</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Doodle type="heart" size={12} inline stroke={C.accent} /> day off together</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Doodle type="check" size={12} inline stroke="#5a9c6e" /> we have plans that day</div>
       </div>
     </Paper>
   );
@@ -1402,20 +1502,22 @@ function CalendarView({ plans, config }) {
 function PlansPage({ plans, setPlans, config, activeUser }) {
   const [text, setText] = useState('');
   const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
   const add = e => {
     e.preventDefault();
     if (!text.trim()) return;
-    setPlans([...plans, { id: uid(), text: text.trim(), date, done: false }]);
-    setText(''); setDate('');
+    setPlans([...plans, { id: uid(), text: text.trim(), date, time, done: false }]);
+    setText(''); setDate(''); setTime('');
   };
   const addShifts = shifts => {
     const mapped = shifts.filter(s => s && s.date).map(s => ({
       id: uid(),
       text: `Shift${s.time ? ' — ' + s.time : ''}${s.label ? ' · ' + s.label : ''}`,
-      date: s.date, done: false, type: 'shift', by: activeUser
+      date: s.date, done: false, type: 'shift', by: activeUser, label: s.label || ''
     }));
     setPlans([...plans, ...mapped]);
   };
+  const addShift = shift => addShifts([shift]);
   const toggle = id => setPlans(plans.map(p => p.id === id ? { ...p, done: !p.done } : p));
   const remove = id => setPlans(plans.filter(p => p.id !== id));
   const sorted = [...plans].sort((a, b) => {
@@ -1432,11 +1534,12 @@ function PlansPage({ plans, setPlans, config, activeUser }) {
 
       <CalendarView plans={plans} config={config} />
 
-      <RosterScanner onShifts={addShifts} />
+      <ShiftForm onAddShift={addShift} />
 
       <form onSubmit={add} style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
         <Input value={text} onChange={e => setText(e.target.value)} placeholder="A date idea, a trip…" style={{ flex: 2, minWidth: 160 }} />
         <Input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ flex: 1, minWidth: 140 }} />
+        <Input type="time" value={time} onChange={e => setTime(e.target.value)} style={{ flex: 1, minWidth: 110 }} />
         <Btn type="submit" variant="accent" rot={1}>Add</Btn>
       </form>
 
@@ -1456,7 +1559,7 @@ function PlansPage({ plans, setPlans, config, activeUser }) {
                   {p.type === 'shift' && <Doodle type="calendar" size={13} inline stroke={C.faint} />}
                   {p.text}
                 </div>
-                {p.date && <div style={{ fontFamily: 'Indie Flower', fontSize: 12, color: C.sub }}>{p.date}</div>}
+                {p.date && <div style={{ fontFamily: 'Indie Flower', fontSize: 12, color: C.sub }}>{p.date}{p.time ? ' · ' + formatTime12(p.time) : ''}</div>}
               </div>
               <button onClick={() => remove(p.id)} className="press" style={{ background: 'none', border: 'none', color: C.faint, cursor: 'pointer', fontSize: 14 }}>✕</button>
             </div>
@@ -1493,7 +1596,7 @@ function KikiBubble({ label, entry, flip, figure = 'kiki', onClear }) {
 }
 
 /* ============================================================= HOME */
-function HomePage({ config, photos, addPhoto, updatePhoto, tasksData, activeUser, status, setStatus, statusLog, setStatusLog, goTo, openBooth, openTurnBooth, openQuickCamera, onSignOut }) {
+function HomePage({ config, photos, addPhoto, updatePhoto, tasksData, activeUser, plans, status, setStatus, statusLog, setStatusLog, goTo, openBooth, openTurnBooth, openQuickCamera, onSignOut }) {
   const partnerName = activeUser === config.nameA ? config.nameB : config.nameA;
   const myLog = statusLog[activeUser] || [];
   const theirLog = statusLog[partnerName] || [];
@@ -1501,6 +1604,9 @@ function HomePage({ config, photos, addPhoto, updatePhoto, tasksData, activeUser
   const todaysTasks = dailyTasks(tasksData.templates);
   const doneCount = todaysTasks.filter(t => (tasksData.completions[today] || {})[t.id]).length;
   const sortedPhotos = [...photos].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const nextPlan = [...(plans || [])]
+    .filter(p => p.type !== 'shift' && p.date && !p.done && p.date >= today)
+    .sort((a, b) => (a.date + (a.time || '00:00')).localeCompare(b.date + (b.time || '00:00')))[0];
   const [customText, setCustomText] = useState('');
   const [customOpen, setCustomOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
@@ -1509,7 +1615,7 @@ function HomePage({ config, photos, addPhoto, updatePhoto, tasksData, activeUser
   const handleFile = async file => {
     if (!file) return;
     setBusy(true);
-    try { const compressed = await compressImage(file); const url = await uploadToCloudinary(compressed); addPhoto({ src: url, date: todayStr() }); }
+    try { const compressed = await compressImage(file); const url = await uploadToCloudinary(compressed); addPhoto({ src: url, date: todayStr(), at: Date.now() }); }
     catch (e) { alert("Couldn't read that image."); }
     setBusy(false);
   };
@@ -1553,6 +1659,17 @@ function HomePage({ config, photos, addPhoto, updatePhoto, tasksData, activeUser
           {dailyQuote()}
         </div>
       </div>
+
+      {nextPlan && (
+        <div onClick={() => goTo(3)} className="press" style={{
+          display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center', textAlign: 'center',
+          background: C.accentSoft, borderRadius: 999, padding: '9px 16px', marginBottom: 18, cursor: 'pointer',
+          fontFamily: "'Patrick Hand', cursive", fontSize: 14, color: C.ink
+        }}>
+          <Doodle type="check" size={14} inline stroke="#5a9c6e" />
+          Coming up: {nextPlan.text} — {new Date(nextPlan.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{nextPlan.time ? ' · ' + formatTime12(nextPlan.time) : ''}
+        </div>
+      )}
 
       <Paper rotate={-0.4} tone={1} style={{ padding: 18, marginBottom: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -1694,7 +1811,7 @@ function QuickCamera({ addPhoto, onClose }) {
   const save = async () => {
     try {
       const url = await uploadToCloudinary(shot);
-      addPhoto({ src: url, date: todayStr() });
+      addPhoto({ src: url, date: todayStr(), at: Date.now() });
     } catch (e) { console.error('upload failed', e); }
     setSaved(true);
     setTimeout(onClose, 700);
@@ -1781,7 +1898,7 @@ function Photobooth({ addPhoto, onClose }) {
       const finalSrc = await bakeFilter(src, activeFilter.css);
       try {
         const url = await uploadToCloudinary(finalSrc);
-        addPhoto({ src: url, date: todayStr() });
+        addPhoto({ src: url, date: todayStr(), at: Date.now() });
       } catch (e) { console.error('upload failed', e); }
     }
     setSaving(false);
@@ -1919,7 +2036,7 @@ function TurnPhotobooth({ activeUser, config, addPhoto, onClose }) {
         const rows = [[updated.shot1, updated.shot2], [updated.shot3, updated.shot4], [updated.shot5, updated.shot6]];
         const stripDataUrl = await buildPhotoStrip(rows, activeFilter, leftName, rightName);
         const stripUrl = await uploadToCloudinary(stripDataUrl);
-        addPhoto({ src: stripUrl, date: todayStr(), caption: `Photobooth strip — ${leftName} & ${rightName}` });
+        addPhoto({ src: stripUrl, date: todayStr(), at: Date.now(), caption: `Photobooth strip — ${leftName} & ${rightName}` });
         const done = { ...updated, turn: '', status: 'complete', stripUrl };
         setSession(done);
         const res = await writePhotoboothSession(done);
@@ -2190,7 +2307,7 @@ function App() {
   }
 
   const pages = [
-    <HomePage key="home" config={config} photos={photos} addPhoto={addPhoto} updatePhoto={updatePhoto} tasksData={tasksData} activeUser={authedUser}
+    <HomePage key="home" config={config} photos={photos} addPhoto={addPhoto} updatePhoto={updatePhoto} tasksData={tasksData} activeUser={authedUser} plans={plans}
       status={status} setStatus={setStatus} statusLog={statusLog} setStatusLog={setStatusLog} goTo={setTab} openBooth={() => setShowPhotobooth(true)} openTurnBooth={() => setShowTurnPhotobooth(true)} openQuickCamera={() => setShowQuickCamera(true)} onSignOut={() => setAuthedUser(null)} />,
     <NotesPage key="notes" notes={notes} addNote={addNote} removeNote={removeNote} activeUser={authedUser} />,
     <TogetherPage key="together" tasksData={tasksData} setTasksData={setTasksData} activeUser={authedUser} rewards={rewards} setRewards={setRewards} />,
