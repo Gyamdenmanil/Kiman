@@ -1753,8 +1753,8 @@ function HomePage({ config, photos, addPhoto, updatePhoto, deletePhoto, tasksDat
 
       <Paper rotate={-0.4} tone={1} style={{ padding: 18, marginBottom: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-          <KikiBubble label={activeUser.toUpperCase()} entry={myLog[0]} figure="kiko" onClear={() => setStatusLog({ ...statusLog, [activeUser]: [] })} />
-          <KikiBubble label={partnerName.toUpperCase()} entry={theirLog[0]} flip />
+          <KikiBubble label={activeUser.toUpperCase()} entry={myLog[0]} figure={activeUser === config.nameA ? 'kiko' : 'kiki'} onClear={() => setStatusLog({ ...statusLog, [activeUser]: [] })} />
+          <KikiBubble label={partnerName.toUpperCase()} entry={theirLog[0]} figure={partnerName === config.nameA ? 'kiko' : 'kiki'} flip />
         </div>
         <div style={{ fontFamily: 'Indie Flower', fontSize: 13, color: C.faint, marginBottom: 10 }}>MY STATUS</div>
         <div style={{ display: 'flex', flexWrap: 'nowrap', overflowX: 'auto', gap: 8, marginBottom: 12, paddingBottom: 4 }}>
@@ -2517,7 +2517,7 @@ function NotAuthorizedScreen({ email }) {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, textAlign: 'center' }}>
       <div>
-        <p style={{ fontSize: 17, color: C.ink, marginBottom: 14 }}>{email} isn\u2019t invited to this one \ud83d\udc8c</p>
+        <p style={{ fontSize: 17, color: C.ink, marginBottom: 14 }}>{email} isn’t invited to this one 💌</p>
         <Btn variant="ghost" onClick={() => signOutOfGoogle()} rot={0}>Try a different account</Btn>
       </div>
     </div>
@@ -2530,7 +2530,7 @@ function AuthGate() {
     const unsub = fbAuth.onAuthStateChanged(user => {
       if (!user) { setStatus('signedOut'); return; }
       setEmail(user.email || '');
-      setStatus(ALLOWED_EMAILS.includes(user.email) ? 'authorized' : 'unauthorized');
+      setStatus(ALLOWED_EMAILS.some(e => e.toLowerCase() === (user.email || '').toLowerCase()) ? 'authorized' : 'unauthorized');
     });
     return () => unsub();
   }, []);
