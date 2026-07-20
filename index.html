@@ -323,6 +323,30 @@ async function buildPhotoStrip(rows, filterCss, leftName, rightName) {
   ctx.fillText(`${leftName} & ${rightName} \u2022 Photobooth`, w / 2, frameH - 16);
   return canvas.toDataURL('image/jpeg', 0.92);
 }
+async function buildSoloPhotoStrip(shots, filterCss) {
+  const loaded = await Promise.all(shots.map(loadImage));
+  const w = 320, pad = 16, gap = 10, footerH = 36;
+  const colW = w - pad * 2;
+  const rowH = colW * 0.75;
+  const frameH = pad + (rowH + gap) * loaded.length - gap + footerH;
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = frameH;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#FFF9EF';
+  ctx.fillRect(0, 0, w, frameH);
+  let y = pad;
+  ctx.filter = filterCss && filterCss !== 'none' ? filterCss : 'none';
+  loaded.forEach(img => {
+    ctx.drawImage(img, pad, y, colW, rowH);
+    y += rowH + gap;
+  });
+  ctx.filter = 'none';
+  ctx.fillStyle = '#A8536C';
+  ctx.font = '600 20px "Caveat", cursive';
+  ctx.textAlign = 'center';
+  ctx.fillText('Photobooth', w / 2, frameH - 12);
+  return canvas.toDataURL('image/jpeg', 0.92);
+}
 async function patchPhotoDoc(id, patch) {
   const keys = Object.keys(patch);
   if (!keys.length) return;
@@ -557,6 +581,10 @@ function Doodle({ type, size = 44, style, stroke, inline }) {
       <circle cx="18" cy="19" r="1.3" fill={c} stroke="none" />
       <circle cx="26" cy="19" r="1.3" fill={c} stroke="none" />
       <path d="M18.5 23.5 Q22 26.5 25.5 23.5" strokeWidth="1.8" />
+    </g>,
+    fire: <g fill="none" stroke={c} strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M22 4 C15 13 11 19 11 26 C11 34 15.8 39 22 39 C28.2 39 33 34 33 26 C33 21.5 30.4 18 27.5 16 C28.4 21 26.6 23.8 24 23.5 C26.2 18.3 23.5 11.5 22 4 Z" />
+      <path d="M22 19 C19.2 23.2 18 26.2 18 29 C18 32.6 19.8 35 22 35 C24.2 35 26 32.6 26 29 C26 27 25.1 25.4 23.7 24.3 C24.4 26.4 23.2 27.7 21.7 26.3 C22.6 24.4 22.7 21.9 22 19 Z" />
     </g>
   };
   if (inline) {
@@ -1676,7 +1704,7 @@ function KikiBubble({ label, entry, flip, figure = 'kiki', onClear }) {
 }
 
 /* ============================================================= HOME */
-function HomePage({ config, photos, addPhoto, updatePhoto, deletePhoto, tasksData, activeUser, plans, status, setStatus, statusLog, setStatusLog, goTo, openBooth, openTurnBooth, openQuickCamera, onSignOut }) {
+function HomePage({ config, photos, addPhoto, updatePhoto, deletePhoto, tasksData, activeUser, plans, streak, status, setStatus, statusLog, setStatusLog, goTo, openBooth, openTurnBooth, openQuickCamera, onSignOut }) {
   const partnerName = activeUser === config.nameA ? config.nameB : config.nameA;
   const myLog = statusLog[activeUser] || [];
   const theirLog = statusLog[partnerName] || [];
@@ -1708,6 +1736,12 @@ function HomePage({ config, photos, addPhoto, updatePhoto, deletePhoto, tasksDat
     mins: Math.floor(togetherMs / 60000) % 60,
     secs: Math.floor(togetherMs / 1000) % 60
   };
+  // A gap of 2+ calendar days since the last logged activity means the streak is broken —
+  // shown as 0/unlit here even though the last-saved count only resets on the next activity.
+  const streakGap = streak.last ? daysBetween(streak.last) : null;
+  const streakBroken = streakGap === null || streakGap >= 2;
+  const streakCount = streakBroken ? 0 : streak.count;
+  const streakLit = streak.last === today;
 
   const submitCustom = e => {
     e.preventDefault();
@@ -1734,6 +1768,12 @@ function HomePage({ config, photos, addPhoto, updatePhoto, deletePhoto, tasksDat
         </h1>
         <div style={{ fontFamily: 'Patrick Hand', fontSize: 16, color: C.sub, marginTop: 4, transform: 'rotate(-0.6deg)' }}>
           {togetherElapsed.days.toLocaleString()}d {String(togetherElapsed.hours).padStart(2, '0')}h {String(togetherElapsed.mins).padStart(2, '0')}m {String(togetherElapsed.secs).padStart(2, '0')}s together
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 8 }}>
+          <Doodle type="fire" size={19} inline stroke={streakLit ? '#FF7A45' : C.line} />
+          <span style={{ fontFamily: "'Patrick Hand', cursive", fontSize: 15, color: streakLit ? C.accentDark : C.faint, fontWeight: streakLit ? 700 : 400 }}>
+            {streakCount > 0 ? `${streakCount} day${streakCount === 1 ? '' : 's'} streak` : 'No streak yet — do something today'}
+          </span>
         </div>
         <div style={{ fontFamily: 'Shadows Into Light', fontSize: 19, color: C.accentDark, marginTop: 8, transform: 'rotate(-0.8deg)' }}>
           {dailyQuote()}
@@ -1927,26 +1967,11 @@ function QuickCamera({ addPhoto, onClose }) {
 }
 
 const PHOTO_FILTERS = [
-  { key: 'none', label: 'Normal', css: 'none' },
+  { key: 'none', label: 'Original', css: 'none' },
   { key: 'bw', label: 'Black & White', css: 'grayscale(1) contrast(1.1)' },
-  { key: 'retro', label: 'Retro', css: 'sepia(0.4) saturate(1.3) contrast(0.95) brightness(1.05) hue-rotate(-6deg)' }
+  { key: 'vintage', label: 'Vintage', css: 'sepia(0.4) saturate(1.3) contrast(0.95) brightness(1.05) hue-rotate(-6deg)' },
+  { key: 'bwVintage', label: 'B&W Vintage', css: 'grayscale(1) sepia(0.25) contrast(1.15) brightness(0.92)' }
 ];
-function bakeFilter(src, css) {
-  return new Promise(resolve => {
-    if (!css || css === 'none') { resolve(src); return; }
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width; canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      ctx.filter = css;
-      ctx.drawImage(img, 0, 0);
-      resolve(canvas.toDataURL('image/jpeg', 0.9));
-    };
-    img.onerror = () => resolve(src);
-    img.src = src;
-  });
-}
 function Photobooth({ addPhoto, onClose }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -1976,13 +2001,11 @@ function Photobooth({ addPhoto, onClose }) {
   const activeFilter = PHOTO_FILTERS.find(f => f.key === filter) || PHOTO_FILTERS[0];
   const saveStrip = async () => {
     setSaving(true);
-    for (const src of shots) {
-      const finalSrc = await bakeFilter(src, activeFilter.css);
-      try {
-        const url = await uploadToCloudinary(finalSrc);
-        addPhoto({ src: url, date: todayStr(), at: Date.now() });
-      } catch (e) { console.error('upload failed', e); }
-    }
+    try {
+      const stripDataUrl = await buildSoloPhotoStrip(shots, activeFilter.css);
+      const url = await uploadToCloudinary(stripDataUrl);
+      addPhoto({ src: url, date: todayStr(), at: Date.now(), caption: 'Photobooth strip' });
+    } catch (e) { console.error('upload failed', e); }
     setSaving(false);
     setSaved(true);
     setTimeout(onClose, 900);
@@ -2196,17 +2219,17 @@ function TurnPhotobooth({ activeUser, config, addPhoto, onClose }) {
               </Btn>
             </React.Fragment>
           ) : (
-            <div className="fade-up" style={{ padding: '30px 10px' }}>
-              <Doodle type="zzz" size={34} inline stroke={C.faint} />
-              <p style={{ fontFamily: "'Patrick Hand', cursive", fontSize: 16, color: C.sub, marginTop: 10 }}>
+            <div className="fade-up" style={{ padding: '14px 10px' }}>
+              <Doodle type="zzz" size={28} inline stroke={C.faint} />
+              <p style={{ fontFamily: "'Patrick Hand', cursive", fontSize: 15, color: C.sub, marginTop: 8 }}>
                 Waiting for {nameForKey(validSession.turn)}…
               </p>
             </div>
           )}
           {takenThumbs.length > 0 && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 16 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12, justifyContent: 'center' }}>
               {takenThumbs.map((src, i) => (
-                <img key={i} src={src} alt="" style={{ aspectRatio: '4/3', objectFit: 'cover', borderRadius: 8, border: `2px solid ${C.line}`, filter: (PHOTO_FILTERS.find(f => f.key === validSession.filter) || PHOTO_FILTERS[0]).css }} />
+                <img key={i} src={src} alt="" style={{ width: 90, height: 68, objectFit: 'cover', borderRadius: 8, border: `2px solid ${C.line}`, filter: (PHOTO_FILTERS.find(f => f.key === validSession.filter) || PHOTO_FILTERS[0]).css }} />
               ))}
             </div>
           )}
@@ -2284,6 +2307,7 @@ function App() {
   const [status, setStatus] = useState({});
   const [statusLog, setStatusLog] = useState({});
   const [rewards, setRewards] = useState({ points: {}, spins: {}, options: DEFAULT_REWARD_OPTIONS.slice(), log: [] });
+  const [streak, setStreak] = useState({ count: 0, last: '' });
   const skipSaveRef = useRef(false);
   const [authedUser, setAuthedUser] = useState(null);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -2303,6 +2327,7 @@ function App() {
         setStatus(state.status || {});
         setStatusLog(state.statusLog || {});
         setRewards(state.rewards || { points: {}, spins: {}, options: DEFAULT_REWARD_OPTIONS.slice(), log: [] });
+        setStreak(state.streak || { count: 0, last: '' });
       }
       // Photos live in their own Firestore collection (one small doc per photo) so they
       // never bump into the 1MiB single-document cap the way a shared array would.
@@ -2328,8 +2353,8 @@ function App() {
   useEffect(() => {
     if (loading) return;
     if (skipSaveRef.current) { skipSaveRef.current = false; return; }
-    saveState({ config, tasks: tasksData, notes, plans, status, statusLog, rewards, updatedAt: Date.now() });
-  }, [config, tasksData, notes, plans, status, statusLog, rewards]);
+    saveState({ config, tasks: tasksData, notes, plans, status, statusLog, rewards, streak, updatedAt: Date.now() });
+  }, [config, tasksData, notes, plans, status, statusLog, rewards, streak]);
 
   // Live-ish sync: poll the shared doc every ~4.5s so statuses/notes/tasks/rewards made on
   // one phone show up on the other without a manual refresh. Deliberately NOT polling the
@@ -2337,7 +2362,7 @@ function App() {
   // burn through the free daily read quota fast as the photo count grows. Photos still load
   // fresh each time the app opens; just not live tick-to-tick.
   const latestRef = useRef({});
-  useEffect(() => { latestRef.current = { config, tasksData, notes, plans, status, statusLog, rewards }; });
+  useEffect(() => { latestRef.current = { config, tasksData, notes, plans, status, statusLog, rewards, streak }; });
   useEffect(() => {
     if (loading) return;
     const poll = async () => {
@@ -2356,15 +2381,31 @@ function App() {
       maybeSet(setStatus, state.status || {}, cur.status);
       maybeSet(setStatusLog, state.statusLog || {}, cur.statusLog);
       maybeSet(setRewards, state.rewards || { points: {}, spins: {}, options: DEFAULT_REWARD_OPTIONS.slice(), log: [] }, cur.rewards);
+      maybeSet(setStreak, state.streak || { count: 0, last: '' }, cur.streak);
       if (anyChanged) skipSaveRef.current = true;
     };
     const t = setInterval(poll, 4500);
     return () => clearInterval(t);
   }, [loading]);
 
+  // Shared streak: lit for the day as soon as EITHER partner opens the app, sends a photo,
+  // or writes a note. One missed calendar day (no activity from either person) resets it.
+  const recordActivity = () => {
+    const today = todayStr();
+    setStreak(prev => {
+      if (prev.last === today) return prev;
+      const gap = prev.last ? daysBetween(prev.last) : null;
+      return { count: gap === 1 ? prev.count + 1 : 1, last: today };
+    });
+  };
+  useEffect(() => {
+    if (!loading && authedUser) recordActivity();
+  }, [loading, authedUser]);
+
   const addPhoto = async p => {
     const tempId = uid();
     setPhotos(prev => [{ id: tempId, ...p }, ...prev]);
+    recordActivity();
     const realId = await createPhotoDoc(p);
     if (realId) setPhotos(prev => prev.map(x => x.id === tempId ? { ...x, id: realId } : x));
   };
@@ -2376,7 +2417,7 @@ function App() {
     setPhotos(prev => prev.filter(p => p.id !== id));
     deletePhotoDoc(id);
   };
-  const addNote = n => setNotes(prev => [...prev, n]);
+  const addNote = n => { setNotes(prev => [...prev, n]); recordActivity(); };
   const removeNote = id => setNotes(prev => prev.filter(n => n.id !== id));
 
   if (loading) {
@@ -2393,7 +2434,7 @@ function App() {
   }
 
   const pages = [
-    <HomePage key="home" config={config} photos={photos} addPhoto={addPhoto} updatePhoto={updatePhoto} deletePhoto={deletePhoto} tasksData={tasksData} activeUser={authedUser} plans={plans}
+    <HomePage key="home" config={config} photos={photos} addPhoto={addPhoto} updatePhoto={updatePhoto} deletePhoto={deletePhoto} tasksData={tasksData} activeUser={authedUser} plans={plans} streak={streak}
       status={status} setStatus={setStatus} statusLog={statusLog} setStatusLog={setStatusLog} goTo={setTab} openBooth={() => setShowPhotobooth(true)} openTurnBooth={() => setShowTurnPhotobooth(true)} openQuickCamera={() => setShowQuickCamera(true)} onSignOut={() => setAuthedUser(null)} />,
     <NotesPage key="notes" notes={notes} addNote={addNote} removeNote={removeNote} activeUser={authedUser} />,
     <TogetherPage key="together" tasksData={tasksData} setTasksData={setTasksData} activeUser={authedUser} rewards={rewards} setRewards={setRewards} />,
